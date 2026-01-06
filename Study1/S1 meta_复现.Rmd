@@ -1,0 +1,1002 @@
+---
+title: "S1 meta"
+output: html_document
+date: "2025-06-15"
+---
+
+```{r}
+if (!requireNamespace('pacman', quietly = TRUE)) {
+    install.packages('pacman')
+}
+
+pacman::p_load(
+  here, tidyverse, bruceR, esc, 
+  patchwork, ggplot2, ggExtra, plotly
+  )
+
+# 排除科学计数法
+options(scipen = 99999,digits = 5)
+```
+
+# Raw Data
+```{r}
+# 数据导入
+rawdata <- import(here("Study 1", "data", "dimension.xlsx")) %>%
+  filter(Save == 1) # 这里这个save是不考虑数据完整性的情况下保留的范式未偏离的文章，后面需要考虑数据完整性
+
+# 最终保留38篇文章，共114个group
+unique(rawdata$Article_number)
+```
+
+```{r}
+# 定义 SE 到 SD 的转换函数
+se_to_sd <- function(se, n) {
+  se * sqrt(n)
+}
+
+# 定义一个函数来转换 CI 到 SD
+ci_to_sd <- function(ci, n) {
+  se <- ci / (2 * 1.96)  # 先将CI宽度分成两半并除以1.96得到标准误
+  sd <- se * sqrt(n)      # 将标准误乘以样本量的平方根，得到标准差
+  return(sd)
+}
+```
+
+# RT
+## Data Processing
+```{r}
+data_rt <- rawdata %>% 
+  filter((Status_Practice %in% c(1, 2, 3)) &
+       Data_Integrity_Dimension == "yes" &
+       (Data_Integrity_RT %in% c("yes", "no mismatch"))) %>%
+  dplyr::select(Article_number, Study, Group, Status_Practice, Consistent, Sample_size, Female, Mean_age, SD_age, Trial_Condition, Experimetnal_design, Ind_var_I_Matchness, Ind_var_II_Target_words, Ind_var_III, Descriptive_data_RT_SD,
+         starts_with('Data_Integrity'), 
+         'Practice_Number_Q', 'Practice_Number', 
+         starts_with('SnL_PresentTime'), 
+         starts_with('Response_Window'), 
+         starts_with('Picture'), 
+         starts_with('Target_meaning_'), 
+         starts_with('RT_M_mean_target_'),
+         starts_with('RT_M_sd_target_'),
+         starts_with('RT_NM_mean_target_'),
+         starts_with('RT_NM_sd_target_')) %>%
+  mutate(across('Sample_size' | 'Female' | 'Practice_Number' | 'SnL_PresentTime' | 'Response_Window' |
+                starts_with('RT_M_mean_target_') |
+                starts_with('RT_M_sd_target_') |
+                starts_with('RT_NM_mean_target_') |
+                starts_with('RT_NM_sd_target_'), as.numeric)) %>%
+  mutate(across(starts_with('Target_meaning_'), ~ replace_na(., "NA"))) %>%
+  mutate(row_id = row_number())
+
+# 最终保留21篇文章，共65个group
+unique(data_rt$Article_number)
+```
+
+```{r}
+# 把SE转为SD，是SE的数据有8，11，67，81，92
+data_rt_se <- data_rt %>%
+  filter(grepl("SE", data_rt$Descriptive_data_RT_SD, ignore.case = TRUE)) %>%
+  mutate(across(starts_with('RT_M_sd_target_') | starts_with('RT_NM_sd_target_'), 
+                ~ se_to_sd(., Sample_size)))
+
+# 把95%CI转为SD，文章编号为66
+data_rt_ci <- data_rt %>%
+  filter(grepl("CI", data_rt$Descriptive_data_RT_SD, ignore.case = TRUE)) %>%
+  mutate(across(starts_with('RT_M_sd_target_') | starts_with('RT_NM_sd_target_'), 
+                ~ ci_to_sd(., Sample_size)))
+
+# 筛选出正常的列
+data_rt_normal <- data_rt %>%
+  filter(!grepl("SE", data_rt$Descriptive_data_RT_SD, ignore.case = TRUE) &
+         !grepl("CI", data_rt$Descriptive_data_RT_SD, ignore.case = TRUE))
+
+# 将 data_se、data_ci 和 data_normal 连接在一起
+combined_data_rt <- bind_rows(data_rt_se, data_rt_ci, data_rt_normal) %>%
+  arrange(row_id)
+
+# 清除无用的数据框
+rm(data_rt_se, data_rt_ci, data_rt_normal)
+```
+
+```{r}
+# 确定哪些列包含self和stranger
+self_stranger_check <- combined_data_rt %>%
+  summarise(across(starts_with("Target_meaning_"), 
+                   list(has_self = ~ any(. == "self"), 
+                        has_stranger = ~ any(. == "stranger")))) %>%
+  pivot_longer(cols = everything(), 
+               names_to = c("Target", ".value"), 
+               names_sep = "_has_")
+self_stranger_check
+
+# 将self和stranger对应的RT和ACC提取，与其他重要变量形成一个新的数据框
+combined_data_rt_diff <- combined_data_rt %>%
+  mutate(
+    RT_mean_match_self = if_else(
+      Target_meaning_1 == "self", RT_M_mean_target_1, as.numeric(NA)  # 如果Target_1是self，取RT_M_mean_target_1
+    ),
+    RT_sd_match_self = if_else(
+      Target_meaning_1 == "self", RT_M_sd_target_1, as.numeric(NA)  # 如果Target_1是self，取RT_M_sd_target_1
+    ),
+    
+    RT_mean_match_stranger = case_when(
+      Target_meaning_2 == "stranger" ~ RT_M_mean_target_2,  # 如果Target_2是stranger，取RT_M_mean_target_2
+      Target_meaning_3 == "stranger" ~ RT_M_mean_target_3,  # 如果Target_3是stranger，取RT_M_mean_target_3
+      Target_meaning_5 == "stranger" ~ RT_M_mean_target_5,  # 如果Target_5是stranger，取RT_M_mean_target_5
+      TRUE ~ as.numeric(NA)  # 如果都不符合，返回数值型缺失值
+    ),
+    RT_sd_match_stranger = case_when(
+      Target_meaning_2 == "stranger" ~ RT_M_sd_target_2,  # 如果Target_2是stranger，取RT_M_sd_target_2
+      Target_meaning_3 == "stranger" ~ RT_M_sd_target_3,  # 如果Target_3是stranger，取RT_M_sd_target_3
+      Target_meaning_5 == "stranger" ~ RT_M_sd_target_5,  # 如果Target_5是stranger，取RT_M_sd_target_5
+      TRUE ~ as.numeric(NA)  # 如果都不符合，返回数值型缺失值
+    ),
+    
+    RT_mean_match_diff = RT_mean_match_stranger - RT_mean_match_self  # 计算差值
+  ) %>%
+  mutate(Number = row_number(),
+         Female_ratio = Female/Sample_size) %>%
+  dplyr::select(
+    Article_number, Study, Group, Status_Practice, Practice_Number, SnL_PresentTime, Response_Window, 
+    Sample_size, Female, Female_ratio, Mean_age, SD_age, Trial_Condition, Experimetnal_design, Ind_var_I_Matchness, Ind_var_II_Target_words, Ind_var_III, 
+    RT_mean_match_self, RT_sd_match_self, RT_mean_match_stranger, RT_sd_match_stranger, RT_mean_match_diff
+  ) %>%
+  filter(!is.na(Sample_size) & !is.na(Practice_Number) & !is.na(SnL_PresentTime) & !is.na(Response_Window) & !is.na(RT_mean_match_self) & !is.na(RT_mean_match_stranger) & !is.na(RT_sd_match_self) & !is.na(RT_sd_match_stranger))
+
+# 最终保留14篇有数据的文章，共40个group
+unique(combined_data_rt_diff$Article_number)
+```
+
+```{r}
+# Cohen's d for RT
+# 创建一个新的列来保存 Cohen's d 的结果
+combined_data_rt_diff$cohen_d_rt <- NA
+combined_data_rt_diff$vi_rt <- NA
+
+# esc_mean_sd是group1减去group2，对于RT来说，group1是stranger时才是SPE，因为stranger条件下被试RT更长
+# 使用 for 循环来计算每一篇文章的 Cohen's d
+for (i in 1:nrow(combined_data_rt_diff)) {
+  # 调用 esc_mean_sd 计算 Cohen's d 和方差
+  result <- esc_mean_sd(
+    grp1m = combined_data_rt_diff$RT_mean_match_stranger[i],  # 组1的均值
+    grp1sd = combined_data_rt_diff$RT_sd_match_stranger[i],   # 组1的标准差
+    grp1n = combined_data_rt_diff$Sample_size[i],         # 组1的样本数量
+    grp2m = combined_data_rt_diff$RT_mean_match_self[i],  # 组2的均值
+    grp2sd = combined_data_rt_diff$RT_sd_match_self[i],   # 组2的标准差
+    grp2n = combined_data_rt_diff$Sample_size[i],         # 组2的样本数量
+    es.type = "d"                        # 指定效应量类型为 Cohen's d
+  )
+  
+  # 提取效应量 (es) 和方差 (vi)
+  combined_data_rt_diff$cohen_d_rt[i] <- result$es    # 保存效应量值
+  combined_data_rt_diff$vi_rt[i] <- result$var        # 保存方差值
+}
+```
+
+```{r}
+# effect size for RT
+effect_size_rt2 <- combined_data_rt_diff %>%
+  dplyr::select(
+    Article_number, Study, Group, Status_Practice, Practice_Number, SnL_PresentTime, Response_Window,
+    Sample_size, #被试数
+    cohen_d_rt, #刚刚计算的每个研究的效应量
+    vi_rt #刚刚计算的，效应量的variance
+  )
+
+#数据预处理
+df2_rt <- metafor::escalc( #转换成escalc的格式
+  measure = "SMD",  
+  data = effect_size_rt2,
+  yi= cohen_d_rt, #指定每个研究的效应量是哪列
+  vi = vi_rt,  #指定每个研究的效应量的variance是哪列
+  slab = paste("Study ID:", Article_number, Study, Group))  #注明研究的label
+
+#按效应量大小进行排序，方便后续画图展示
+df2_rt <- df2_rt[order(df2_rt$cohen_d_rt), ]
+
+df2_rt <- df2_rt %>%
+  mutate(study_id = paste(Article_number, Study, Group, sep = "_"))
+```
+
+```{r}
+summary_rt <- combined_data_rt_diff %>%
+  select(Article_number, Study, Group, Sample_size, Female, Female_ratio, Mean_age, SD_age, Practice_Number, SnL_PresentTime, Response_Window, cohen_d_rt)
+
+summary_rt
+```
+
+## Marginal Distribution Plot
+```{r}
+# 主图：仅使用大小映射 Cohen's d
+plot_rt <- ggplot(df2_rt, aes(x = Practice_Number, y = Response_Window, 
+                              size = cohen_d_rt)) +
+  geom_point(alpha = 0.15) +
+  scale_size_continuous(range = c(2, 8), name = "Cohen's d RT") +
+  guides(
+    size = guide_legend(order = 1)
+  ) +
+  labs(
+    x = "Practice Number", 
+    y = "Response Window"
+  ) +
+  papaja::theme_apa() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    legend.position = "none"
+  )
+
+# 添加边际分布
+plot_rt_marginal <- ggExtra::ggMarginal(
+  plot_rt, 
+  type = "histogram",  
+  margins = "both",    
+  size = 5,            
+  fill = "gray",       
+  color = "black",     
+  alpha = 0.5          
+)
+
+# 提取大小图例
+plot_rt_legend <- ggplot(df2_rt, aes(x = Practice_Number, y = Response_Window, 
+                                     size = cohen_d_rt)) +
+  geom_point(alpha = 0.6) + 
+  scale_size_continuous(range = c(2, 8), name = "Cohen's d RT") +
+  guides(
+    size = guide_legend(order = 1)
+  ) +
+  theme(
+    legend.position = "right"
+  )
+
+# 提取图例对象
+plot_rt_legend <- cowplot::get_legend(plot_rt_legend)
+
+# 组合主图和图例
+plot_rt_final <- cowplot::plot_grid(
+  plot_rt_marginal, plot_rt_legend, 
+  ncol = 2, 
+  rel_widths = c(4, 1)
+) +
+  papaja::theme_apa()
+
+# 显示最终图
+plot_rt_final
+```
+
+```{r}
+ggsave("rt_marginal.png", 
+       plot = plot_rt_final, 
+       width = 6, 
+       height = 5, 
+       dpi = 300)
+```
+
+## 3D Plot
+### Study 1
+```{r}
+x_range <- range(df2_rt$Response_Window)  # x轴范围（反应窗口）
+y_range <- range(df2_rt$Practice_Number)  # y轴范围（练习次数）
+z_range <- mean(df2_rt$SnL_PresentTime)   # z轴平面位置（刺激呈现时间的均值）
+fig_rt <- plot_ly() %>%
+  # 添加灰色覆盖平面
+  add_trace(
+    x = c(x_range[1], x_range[1], x_range[2], x_range[2]),
+    y = c(y_range[1], y_range[2], y_range[1], y_range[2]),
+    z = c(z_range, z_range, z_range, z_range),
+    type = "mesh3d",
+    intensity = c(1, 1, 1, 1),
+    colorscale = list(c(0, "grey"), c(1, "grey")),
+    opacity = 0.3,
+    showscale = FALSE
+  ) %>%
+
+  # 三维散点图：固定灰色、固定大小
+  add_trace(
+    data = df2_rt,
+    x = ~Response_Window,
+    y = ~Practice_Number,
+    z = ~SnL_PresentTime,
+    type = "scatter3d",
+    mode = "markers",
+    marker = list(
+      size = 5,
+      color = "gray",     # 固定灰色
+      opacity = 0.8
+    )
+  ) %>%
+
+  # 设置三维坐标轴样式
+  layout(
+    scene = list(
+      zaxis = list(
+        range = c(0, 200),
+        dtick = 50,
+        title = "Stimuli Present Time",
+        tickangle = 0
+      ),
+      yaxis = list(title = "Practice Number"),
+      xaxis = list(
+        title = "Response Window",
+        tickangle = 0
+      )
+    )
+  )
+
+fig_rt
+```
+
+### Study 3
+```{r}
+# 研究三取的新点
+points_s3 <- data.frame(
+  Practice_Number = c(0, 0, 120, 120, 8, 120),
+  SnL_PresentTime = c(30, 30, 30, 80, 100, 50),
+  Response_Window = c(300, 600, 600, 600, 1100, 1500)
+)
+```
+
+```{r}
+# 选点 + 原始平面
+x_range1 <- c(0, 3000)
+y_range1 <- c(0, 120)
+
+fig_3d <- plot_ly() %>%
+  # 添加覆盖平面
+  add_trace(
+    x = c(x_range1[1], x_range1[1], x_range1[2], x_range1[2]),  # 平面的 X 坐标
+    y = c(y_range1[1], y_range1[2], y_range1[1], y_range1[2]),  # 平面的 Y 坐标
+    z = c(z_range, z_range, z_range, z_range),
+    type = "mesh3d",
+    intensity = c(1, 1, 1, 1),
+    colorscale = list(c(0, "grey"), c(1, "grey")),
+    opacity = 0.3,
+    showscale = FALSE
+  ) %>%
+  
+  # 原始点：统一颜色
+  add_trace(
+    data = df2_rt,
+    y = ~Practice_Number,
+    x = ~Response_Window,
+    z = ~SnL_PresentTime,
+    type = "scatter3d",
+    mode = "markers",
+    marker = list(
+      size = 6,
+      opacity = 0.8,
+      color = "grey"  # 固定颜色
+    ),
+    name = "Origin"
+  ) %>%
+  
+  # 新增点：不同颜色（假设为红色）
+  add_trace(
+    data = points_s3,
+    y = ~Practice_Number,
+    x = ~Response_Window,
+    z = ~SnL_PresentTime,
+    type = "scatter3d",
+    mode = "markers",
+    marker = list(
+      size = 6,
+      opacity = 0.9,
+      color = "#8f3d2c"  # 与原始点不同的颜色
+    ),
+    name = "Study 3"
+  ) %>%
+  
+  # Layout 设置
+  layout(
+    scene = list(
+      zaxis = list(
+        range = c(0, 200),
+        dtick = 50,
+        title = "Stimuli Present Time",
+        tickangle = 0
+      ),
+      yaxis = list(title = "Practice Number"),
+      xaxis = list(
+        title = "Response Window",
+        tickangle = 0
+      )
+    )
+  )
+
+fig_3d
+```
+
+```{r}
+# 选点 + 按照效应量的曲面区分点的颜色形状
+# 创建分组变量
+points_s3 <- data.frame(
+  Practice_Number = c(0, 0, 120, 120, 8, 120),
+  SnL_PresentTime = c(30, 30, 30, 80, 100, 50),
+  Response_Window = c(300, 600, 600, 600, 1100, 1500)
+)
+
+# 添加 Group 列
+points_s3$Group <- ifelse(
+  (points_s3$Practice_Number == 0 & points_s3$SnL_PresentTime == 30 & points_s3$Response_Window %in% c(300, 600)) |
+    (points_s3$Practice_Number == 8 & points_s3$SnL_PresentTime == 100 & points_s3$Response_Window == 1100) |
+    (points_s3$Practice_Number == 120 & points_s3$SnL_PresentTime == 30 & points_s3$Response_Window == 600),
+  "Group A",  # 高亮组
+  "Group B"   # 其他组
+)
+
+# 绘图
+fig_3d1 <- plot_ly() %>%
+
+  # 原始数据点（灰色）
+  add_trace(
+    data = df2_rt,
+    y = ~Practice_Number,
+    x = ~Response_Window,
+    z = ~SnL_PresentTime,
+    type = "scatter3d",
+    mode = "markers",
+    marker = list(
+      size = 6,
+      opacity = 0.8,
+      color = "grey"
+    ),
+    name = "Origin"
+  ) %>%
+
+  # Group A（红色圆点）
+  add_trace(
+    data = subset(points_s3, Group == "Group A"),
+    y = ~Practice_Number,
+    x = ~Response_Window,
+    z = ~SnL_PresentTime,
+    type = "scatter3d",
+    mode = "markers",
+    marker = list(
+      size = 7,
+      color = "#cc5d20",  # 红棕色
+      symbol = "circle",
+      opacity = 0.95
+    ),
+    name = "Study 3 - Group A"
+  ) %>%
+
+  # Group B（蓝色方点）
+  add_trace(
+    data = subset(points_s3, Group == "Group B"),
+    y = ~Practice_Number,
+    x = ~Response_Window,
+    z = ~SnL_PresentTime,
+    type = "scatter3d",
+    mode = "markers",
+    marker = list(
+      size = 7,
+      color = "#12264f",  # 蓝色
+      symbol = "square",
+      opacity = 0.95
+    ),
+    name = "Study 3 - Group B"
+  ) %>%
+
+  # Layout 设置
+  layout(
+    scene = list(
+      zaxis = list(
+        range = c(0, 200),
+        dtick = 50,
+        title = "Stimuli Present Time",
+        tickangle = 0
+      ),
+      yaxis = list(title = "Practice Number"),
+      xaxis = list(
+        title = "Response Window",
+        tickangle = 0
+      )
+    )
+  )
+
+fig_3d1
+```
+
+```{r}
+# x, y, z要从S2 ana.rmd中跑一下
+fig_3d1 <- fig_3d1 %>%
+  add_surface(
+    x = ~W_acc_seq,
+    y = ~P_acc_seq,
+    z = ~T_acc_matrix,
+    colorscale = list(c(0, "grey"), c(1, "grey")),
+    opacity = 0.3,
+    showscale = TRUE,
+    name = "Fitted Surface"
+  )
+
+fig_3d1
+```
+
+### Study 4
+```{r}
+# 研究四取的新点
+points_s4 <- data.frame(
+  Practice_Number = c(120, 120),
+  SnL_PresentTime = c(30, 80),
+  Response_Window = c(800, 800)
+)
+```
+
+```{r}
+fig_3d2 <- fig_3d1 %>%
+  # 新增点：不同颜色（假设为红色）
+  add_trace(
+    data = points_s4,
+    y = ~Practice_Number,
+    x = ~Response_Window,
+    z = ~SnL_PresentTime,
+    type = "scatter3d",
+    mode = "markers",
+    marker = list(
+      size = 6,
+      opacity = 0.9,
+      color = "#778a77"  # 与原始点不同的颜色
+    ),
+    name = "Study 4"
+  )
+
+fig_3d2
+```
+
+# ACC
+## Data Processing
+```{r}
+data_acc <- rawdata %>% 
+  filter((Status_Practice %in% c(1, 2, 3)) &
+       Data_Integrity_Dimension == "yes" &
+       (Data_Integrity_ACC %in% c("yes", "no mismatch"))) %>%
+  dplyr::select(Article_number, Study, Group, Status_Practice, Consistent, Sample_size, Female, Mean_age, SD_age, Trial_Condition, Experimetnal_design, Ind_var_I_Matchness, Ind_var_II_Target_words, Ind_var_III, Descriptive_data_Accuracy_SD,
+         starts_with('Data_Integrity'), 
+         'Practice_Number_Q', 'Practice_Number', 
+         starts_with('SnL_PresentTime'), 
+         starts_with('Response_Window'), 
+         starts_with('Picture'), 
+         starts_with('Target_meaning_'), 
+         starts_with('ACC_M_mean_target_'),
+         starts_with('ACC_M_sd_target_'),
+         starts_with('ACC_NM_mean_target_'),
+         starts_with('ACC_NM_sd_target_')) %>%
+  mutate(across('Sample_size' | 'Female' | 'Practice_Number' | 'SnL_PresentTime' | 'Response_Window' |
+                starts_with('ACC_M_mean_target_') |
+                starts_with('ACC_M_sd_target_') |
+                starts_with('ACC_NM_mean_target_') |
+                starts_with('ACC_NM_sd_target_'), as.numeric)) %>%
+  mutate(across(starts_with('Target_meaning_'), ~ replace_na(., "NA"))) %>%
+  mutate(row_id = row_number())
+
+# 最终保留16篇文章，共47个group
+unique(data_acc$Article_number)
+```
+
+```{r}
+# ACC
+unique(data_acc$Descriptive_data_Accuracy_SD)
+
+# 把SE转为SD，文章编号为8，67
+data_acc_se <- data_acc %>%
+  filter(grepl("SE", data_acc$Descriptive_data_Accuracy_SD, ignore.case = TRUE)) %>%
+  mutate(across(starts_with('ACC_M_sd_target_') | starts_with('ACC_NM_sd_target_'), 
+                ~ se_to_sd(., Sample_size)))
+
+# 筛选出正常的列
+data_acc_normal <- data_acc %>%
+  filter(!grepl("SE", data_acc$Descriptive_data_Accuracy_SD, ignore.case = TRUE))
+
+# 将 data_se 和 data_normal 连接在一起
+combined_data_acc <- bind_rows(data_acc_se, data_acc_normal) %>%
+  arrange(row_id)
+
+# 清除无用的数据框
+rm(data_acc_se, data_acc_normal)
+```
+
+```{r}
+# 确定哪些列包含self和stranger
+self_stranger_check <- combined_data_acc %>%
+  summarise(across(starts_with("Target_meaning_"), 
+                   list(has_self = ~ any(. == "self"), 
+                        has_stranger = ~ any(. == "stranger")))) %>%
+  pivot_longer(cols = everything(), 
+               names_to = c("Target", ".value"), 
+               names_sep = "_has_")
+self_stranger_check
+
+# 将self和stranger对应的ACC提取，与其他重要变量形成一个新的数据框
+combined_data_acc_diff <- combined_data_acc %>%
+  mutate(
+    ACC_mean_match_self = if_else(
+      Target_meaning_1 == "self", ACC_M_mean_target_1, as.numeric(NA)  # 如果Target_1是self，取ACC_M_mean_target_1
+    ),
+    ACC_sd_match_self = if_else(
+      Target_meaning_1 == "self", ACC_M_sd_target_1, as.numeric(NA)  # 如果Target_1是self，取ACC_M_mean_target_1
+    ),
+    
+    ACC_mean_match_stranger = case_when(
+      Target_meaning_2 == "stranger" ~ ACC_M_mean_target_2,  # 如果Target_2是stranger，取ACC_M_mean_target_2
+      Target_meaning_3 == "stranger" ~ ACC_M_mean_target_3,  # 如果Target_3是stranger，取ACC_M_mean_target_3
+      Target_meaning_5 == "stranger" ~ ACC_M_mean_target_5,  # 如果Target_5是stranger，取ACC_M_mean_target_5
+      TRUE ~ as.numeric(NA)  # 如果都不符合，返回数值型缺失值
+    ),
+    ACC_sd_match_stranger = case_when(
+      Target_meaning_2 == "stranger" ~ ACC_M_sd_target_2,  # 如果Target_2是stranger，取ACC_M_sd_target_2
+      Target_meaning_3 == "stranger" ~ ACC_M_sd_target_3,  # 如果Target_3是stranger，取ACC_M_sd_target_3
+      Target_meaning_5 == "stranger" ~ ACC_M_sd_target_5,  # 如果Target_5是stranger，取ACC_M_sd_target_5
+      TRUE ~ as.numeric(NA)  # 如果都不符合，返回数值型缺失值
+    ),
+    
+    ACC_mean_match_diff = ACC_mean_match_stranger - ACC_mean_match_self  # 计算差值
+  ) %>%
+  mutate(Number = row_number(),
+         Female_ratio = Female/Sample_size) %>%
+  dplyr::select(
+    Article_number, Study, Group, Status_Practice, Practice_Number, SnL_PresentTime, Response_Window, 
+    Sample_size, Female, Female_ratio, Mean_age, SD_age, Trial_Condition, Experimetnal_design, Ind_var_I_Matchness, Ind_var_II_Target_words, Ind_var_III, 
+    ACC_mean_match_self, ACC_sd_match_self, ACC_mean_match_stranger, ACC_sd_match_stranger, ACC_mean_match_diff
+  ) %>%
+  filter(!is.na(Sample_size) & !is.na(Practice_Number) & !is.na(SnL_PresentTime) & !is.na(Response_Window) & !is.na(ACC_mean_match_self) & !is.na(ACC_mean_match_stranger) & !is.na(ACC_sd_match_self) & !is.na(ACC_sd_match_stranger))
+
+# 最终保留8篇有数据的文章，共19个group
+unique(combined_data_acc_diff$Article_number)
+```
+
+```{r}
+# Cohen's d for ACC
+# 创建一个新的列来保存 Cohen's d 的结果
+combined_data_acc_diff$cohen_d_acc <- NA
+combined_data_acc_diff$vi_acc <- NA
+
+# esc_mean_sd是group1减去group2，对于ACC来说，group1是self时才是SPE，因为self条件下被试准确率更高
+# 使用 for 循环来计算每一篇文章的 Cohen's d
+for (i in 1:nrow(combined_data_acc_diff)) {
+  # 调用 esc_mean_sd 计算 Cohen's d 和方差
+  result <- esc_mean_sd(
+    grp1m = combined_data_acc_diff$ACC_mean_match_self[i],  # 组1的均值
+    grp1sd = combined_data_acc_diff$ACC_sd_match_self[i],   # 组1的标准差
+    grp1n = combined_data_acc_diff$Sample_size[i],         # 组1的样本数量
+    grp2m = combined_data_acc_diff$ACC_mean_match_stranger[i],  # 组2的均值
+    grp2sd = combined_data_acc_diff$ACC_sd_match_stranger[i],   # 组2的标准差
+    grp2n = combined_data_acc_diff$Sample_size[i],         # 组2的样本数量
+    es.type = "d"                        # 指定效应量类型为 Cohen's d
+  )
+  
+  # 提取效应量 (es) 和方差 (vi)
+  combined_data_acc_diff$cohen_d_acc[i] <- result$es    # 保存效应量值
+  combined_data_acc_diff$vi_acc[i] <- result$var        # 保存方差值
+}
+```
+
+```{r}
+# effect size for ACC
+effect_size_acc3 <- combined_data_acc_diff %>%
+  dplyr::select(
+    Article_number, Study, Group, Status_Practice, Practice_Number, SnL_PresentTime, Response_Window,
+    Sample_size, #被试数
+    cohen_d_acc, #刚刚计算的每个研究的效应量
+    vi_acc #刚刚计算的，效应量的variance
+  )
+
+#数据预处理
+df3_acc <- metafor::escalc( #转换成escalc的格式
+  measure = "SMD",  
+  data = effect_size_acc3,
+  yi= cohen_d_acc, #指定每个研究的效应量是哪列
+  vi = vi_acc,  #指定每个研究的效应量的variance是哪列
+  slab = paste("Study ID:", Article_number, Study, Group))  #注明研究的label
+
+#按效应量大小进行排序，方便后续画图展示
+df3_acc <- df3_acc[order(df3_acc$cohen_d_acc), ]
+
+df3_acc <- df3_acc %>%
+  mutate(study_id = paste(Article_number, Study, Group, sep = "_"))
+```
+
+```{r}
+summary_acc <- combined_data_acc_diff %>%
+  select(Article_number, Study, Group, Sample_size, Female, Female_ratio, Mean_age, SD_age, Practice_Number, SnL_PresentTime, Response_Window, cohen_d_acc)
+
+summary_acc
+```
+
+## Marginal Distribution Plot
+```{r}
+# 创建基础散点图（仅点的大小由 cohen_d_acc 控制）
+plot_acc <- ggplot(df3_acc, 
+                   aes(x = Practice_Number, y = Response_Window, 
+                       size = cohen_d_acc)) +
+  geom_point(alpha = 0.15) + 
+  scale_size_continuous(range = c(2, 8), name = "Cohen's d ACC") +
+  guides(
+    size = guide_legend(order = 1)
+  ) +
+  labs(
+    x = "Practice Number", 
+    y = "Response Window"
+  ) +
+  papaja::theme_apa() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    legend.position = "none"  # 主图隐藏图例
+  )
+
+# 添加边际分布
+plot_acc_marginal <- ggExtra::ggMarginal(
+  plot_acc, 
+  type = "histogram",  
+  margins = "both",    
+  size = 5,            
+  fill = "gray",       
+  color = "black",     
+  alpha = 0.5          
+)
+
+# 提取大小图例（无颜色映射）
+plot_acc_legend <- ggplot(df3_acc, 
+                          aes(x = Practice_Number, y = Response_Window, 
+                              size = cohen_d_acc)) +
+  geom_point(alpha = 0.6) + 
+  scale_size_continuous(range = c(2, 8), name = "Cohen's d ACC") +
+  guides(
+    size = guide_legend(order = 1)
+  ) +
+  theme(
+    legend.position = "right"
+  )
+
+# 提取图例对象
+plot_acc_legend <- cowplot::get_legend(plot_acc_legend)
+
+# 组合主图和图例
+plot_acc_final <- cowplot::plot_grid(
+  plot_acc_marginal, plot_acc_legend, 
+  ncol = 2, 
+  rel_widths = c(4, 1)
+) +
+  papaja::theme_apa()
+
+# 显示最终图
+plot_acc_final
+```
+
+```{r}
+ggsave("acc_marginal.png", 
+       plot = plot_acc_final, 
+       width = 6, 
+       height = 5, 
+       dpi = 300)
+```
+
+## 3D Plot
+```{r}
+# 计算平面的 x, y 和 z 范围
+y_range <- range(df3_acc$Practice_Number)
+x_range <- range(df3_acc$Response_Window)
+z_range <- mean(df3_acc$SnL_PresentTime)  # 平面 z 坐标固定为平均值
+
+# 创建三维散点图和覆盖平面
+fig_acc <- plot_ly() %>%
+  # 添加覆盖平面
+  add_trace(
+    x = c(x_range[1], x_range[1], x_range[2], x_range[2]),
+    y = c(y_range[1], y_range[2], y_range[1], y_range[2]),
+    z = c(z_range, z_range, z_range, z_range),
+    type = "mesh3d",
+    intensity = c(1, 1, 1, 1),
+    colorscale = list(c(0, "grey"), c(1, "grey")),
+    opacity = 0.3,
+    showscale = FALSE
+  ) %>%
+  
+  # 添加三维散点图（固定灰色、固定大小）
+  add_trace(
+    data = df3_acc,
+    x = ~Response_Window,
+    y = ~Practice_Number,
+    z = ~SnL_PresentTime,
+    type = "scatter3d",
+    mode = "markers",
+    marker = list(
+      size = 5,
+      color = "gray",     # 固定灰色
+      opacity = 0.8
+    )
+  ) %>%
+
+  # 设置三维布局
+  layout(
+    scene = list(
+      zaxis = list(
+        range = c(0, 200),
+        dtick = 50,
+        title = "Stimuli Present Time",
+        tickangle = 0
+      ),
+      yaxis = list(title = "Practice Number"),
+      xaxis = list(
+        title = "Response Window",
+        tickangle = 0
+      )
+    )
+  )
+
+fig_acc
+```
+
+# General Distribution
+```{r}
+distribution_cd <- ggplot() +
+  # 绘制 df2_rt 数据集的密度曲线
+  geom_density(data = df2_rt, aes(x = cohen_d_rt, fill = "df2_rt"), alpha = 0.3) +
+  # 绘制 df3_acc 数据集的密度曲线
+  geom_density(data = df3_acc, aes(x = cohen_d_acc, fill = "df3_acc"), alpha = 0.3) +
+  # 添加图例标签
+  labs(
+    x = "Cohen's d", 
+    y = "Density",
+    fill = "Distribution"  # 设置图例标签标题
+  ) +
+  # 使用 apa 风格主题
+  papaja::theme_apa() +
+  # 自定义图例
+  scale_fill_manual(values = c("df2_rt" = "darkred", "df3_acc" = "darkblue"),
+                    labels = c("df2_rt" = "Cohen's d RT", "df3_acc" = "Cohen's d ACC"))
+
+distribution_cd
+```
+
+```{r}
+ggsave("distribution_cd.png", 
+       plot = distribution_cd, 
+       width = 7, 
+       height = 5, 
+       dpi = 300)
+```
+
+## Analysis
+```{r}
+pacman::p_load(
+  e1071, nortest, boot, multimode
+  )
+```
+
+```{r}
+# 基础描述统计函数
+# 正态性判断：若shapiro_p < 0.1或ad_p < 0.05，拒绝正态性假设
+# 分布特征：偏度绝对值>1 → 显著偏态；峰度绝对值>2 → 显著尖峰/低峰
+describe_effects <- function(data, name) {
+  list(
+    n = length(data),
+    mean = mean(data),
+    sd = sd(data),
+    median = median(data),
+    mad = mad(data), # 中位数绝对偏差
+    skewness = skewness(data),
+    kurtosis = kurtosis(data),
+    shapiro_p = shapiro.test(data)$p.value,
+    ad_p = ad.test(data)$p.value # Anderson-Darling检验
+  )
+}
+```
+
+```{r}
+rt_stats <- describe_effects(df2_rt$cohen_d_rt, "RT")
+rt_stats
+```
+
+```{r}
+acc_stats <- describe_effects(df3_acc$cohen_d_acc, "ACC")
+acc_stats
+```
+
+```{r}
+# 多图布局函数
+plot_distribution <- function(data) {
+  p1 <- ggplot(data.frame(x=data), aes(x)) +
+    geom_histogram(aes(y=..density..), bins=15, fill="#4E79A7", alpha=0.7) +
+    geom_density(color="#E15759", linewidth=1) +
+    labs(x="Cohen's d") +
+    papaja::theme_apa()
+
+  p2 <- ggplot(data.frame(x=data), aes(sample=x)) +
+    stat_qq(distribution=qnorm, dparams=list(mean=mean(data), sd=sd(data))) +
+    geom_abline(slope=1, intercept=0, color="#E15759") +
+    papaja::theme_apa()
+
+  gridExtra::grid.arrange(p1, p2, ncol=2)
+}
+```
+
+```{r}
+distribution_rt <- plot_distribution(df2_rt$cohen_d_rt)
+distribution_rt
+
+ggsave("distribution_rt.png", 
+       plot = distribution_rt, 
+       width = 7, 
+       height = 5, 
+       dpi = 300)
+```
+
+```{r}
+distribution_acc <- plot_distribution(df3_acc$cohen_d_acc)
+distribution_acc
+
+ggsave("distribution_acc.png", 
+       plot = distribution_acc, 
+       width = 7, 
+       height = 5, 
+       dpi = 300)
+```
+
+```{r}
+analyze_centrality <- function(data) {
+  # 传统参数法
+  param <- list(
+    mean = mean(data),
+    sd = sd(data),
+    t_ci = t.test(data)$conf.int
+  )
+  
+  # 稳健非参法
+  nonpar <- list(
+    median = median(data),
+    iqr = IQR(data),
+    quantile_ci = quantile(data, c(0.025, 0.975))
+  )
+  
+  # Bootstrap法（BCa CI）
+  boot_mean <- boot(data, function(d,i) mean(d[i]), R=5000)
+  boot_ci <- boot.ci(boot_mean, type="bca")$bca[4:5]
+  
+  return(list(param=param, nonpar=nonpar, boot=boot_ci))
+}
+
+# 执行分析
+rt_central <- analyze_centrality(df2_rt$cohen_d_rt)
+acc_central <- analyze_centrality(df3_acc$cohen_d_acc)
+```
+
+```{r}
+rt_central
+```
+
+```{r}
+acc_central
+```
+
+```{r}
+# 多峰检测（Silverman检验）
+# 当modality_p < 0.1时考虑混合分布
+multimodal_test <- function(data) {
+  modetest(data, method="ACR", B=1000)$p.value
+}
+
+# 执行分析
+rt_modality <- multimodal_test(df2_rt$cohen_d_rt)
+acc_modality <- multimodal_test(df3_acc$cohen_d_acc)
+
+# 异常值检测
+# 检查超过1.5IQR的数据点生物学合理性
+detect_outliers <- function(data) {
+  Q <- quantile(data, c(0.25, 0.75))
+  iqr <- Q[2] - Q[1]
+  which(data < (Q[1] - 1.5*iqr) | data > (Q[2] + 1.5*iqr))
+}
+
+rt_outliers <- detect_outliers(df2_rt$cohen_d_rt)
+acc_outliers <- detect_outliers(df3_acc$cohen_d_acc)
+```
+
+```{r}
+rt_modality
+rt_outliers
+```
+
+```{r}
+acc_modality
+acc_outliers
+```

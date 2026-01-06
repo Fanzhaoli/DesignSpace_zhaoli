@@ -1,0 +1,2423 @@
+---
+title: "S4"
+author: "Fanzhaoli"_复现
+date: "2025-10-23"
+output: html_document
+---
+```{r}
+if (!requireNamespace('pacman', quietly = TRUE)) {
+    install.packages('pacman')
+}
+
+pacman::p_load(
+  tidyverse, purrr, bruceR, boot, lme4,
+  ggplot2, ggdist, ggridges, patchwork
+  )
+
+# 不使用科学计数法显示
+options(scipen = 999)
+
+# 隐藏警告
+options(warn = -1)
+```
+
+# Data Preprocessing 预处理
+## Empirical data
+### data
+```{r}
+# 定义修改数据类型的函数
+convert_data_type_emp <- function(df) {
+  df <- df %>% 
+    dplyr::mutate(
+      groupID = as.numeric(groupID),
+      subjectID = as.numeric(subjectID),
+      gender = as.numeric(gender),
+      age = as.numeric(age),
+      handedness = as.numeric(handedness),
+      stage = as.character(stage),
+      trialID = as.numeric(trialID),
+      P = as.numeric(P),
+      T = as.numeric(T),
+      W = as.numeric(W),
+      Shape = as.character(Shape),
+      Label = as.character(Label),
+      CorrectKey = as.character(CorrectKey),
+      Response = as.character(Response),
+      RT = as.numeric(RT),
+      Correct = as.numeric(Correct)
+      )
+  return(df)
+}
+```
+
+```{r}
+# 将所有需要读取的数据文件名字保存到名为files的list
+file_emp <- list.files(
+  here::here("Study 4", "data", "emp_data"), 
+  pattern = "EXP.*\\.csv$", 
+  full.names = TRUE)
+```
+
+```{r}
+df_emp <- data.frame() 
+for (i in seq_along(file_emp)) {
+  # 读取数据
+  df <- read.csv(file_emp[i], header = TRUE) %>%  
+    convert_data_type_emp() 
+  # 合并数据
+  df_emp <- dplyr::bind_rows(df_emp, df) 
+}
+
+# 删除临时变量
+rm(df, file_emp, i)
+```
+
+```{r}
+# 根据数据生成matchness变量
+df_emp <- df_emp %>%
+  filter(stage == "formal") %>%  #  & groupID != 7
+  mutate(
+    # 根据 subjectID 取余数来分配 pattern
+    MatchKey = case_when(
+      subjectID %% 4 == 1 ~ "f",
+      subjectID %% 4 == 2 ~ "j",
+      subjectID %% 4 == 3 ~ "j",
+      subjectID %% 4 == 0 ~ "f",
+      TRUE ~ NA_character_  # 如果有其他情况，设置为 NA
+    ),
+    # 判断是否匹配
+    Matchness = ifelse(CorrectKey == MatchKey, "match", "mismatch"),
+    T = T * 1000,
+    W = W * 1000,
+    RT_ms = RT * 1000
+  )
+
+# 生成变量，被试是否按键
+df_emp$Press <- ifelse(!is.nan(df_emp$RT), 1, 0)  # NA反应
+```
+
+```{r}
+# 按照 groupID 和 subjectID 排序
+df_emp <- df_emp[order(df_emp$groupID, df_emp$subjectID, df_emp$trialID), ]
+
+df_emp <- df_emp %>%
+  group_by(groupID, subjectID) %>%
+  mutate(block = rep(1:ceiling(n()/52), each = 52, length.out = n())) %>%
+  ungroup()
+```
+
+```{r}
+df_emp_match <- df_emp %>% 
+  filter(Matchness == "match") %>%
+  mutate(Type = "empirical") %>%
+  select(groupID, subjectID, Type, block, trialID, P, T, W, Label, Press, Correct, RT, RT_ms)
+```
+
+### parameter
+```{r}
+paradata <- df_emp_match %>%
+  filter(!is.na(RT)) %>%
+  select(groupID, subjectID, Correct, RT, Label)
+
+# 导出合并好的数据
+bruceR::export(
+  paradata, 
+  file = here::here("Study 4", "data", "para_data.csv"))
+```
+
+```{r}
+# 确保文件路径正确
+file_path <- here::here("Study 4", "data", "fast dm", "estimates_0424.txt")  
+
+# 读取文件
+para_emp <- read.table(file_path, header = TRUE, sep = ";", stringsAsFactors = FALSE) %>%
+  mutate(
+    groupID = as.numeric(gsub("\\D", "", sub("participant_(\\d+)_\\d+", "\\1", dataset))),
+    subjectID = as.numeric(gsub("\\D", "", sub("participant_\\d+_(\\d+)", "\\1", dataset)))
+  ) 
+```
+
+```{r}
+para_emp_individual <- para_emp %>%
+  mutate(
+    v_diff = v_self - v_stranger
+  )%>%
+  select(groupID, subjectID, a, v_diff)
+```
+
+```{r}
+para_emp_group <- para_emp %>%
+  mutate(
+    v_diff = v_self - v_stranger
+  ) %>%
+  group_by(groupID) %>%
+  summarise(
+    a = mean(a),
+    v_diff = mean(v_diff),
+    .groups = "drop"
+  ) %>%
+  select(groupID, a, v_diff)
+```
+
+```{r}
+para_emp_long <- para_emp %>%
+  pivot_longer(cols = c(v_self, v_stranger), 
+               names_to = "label", 
+               values_to = "v") %>% 
+  mutate(label = recode(label, 
+                        v_self = "self",
+                        v_stranger = "stranger")) %>%
+  select(groupID, subjectID, label, v)
+```
+
+### participant
+```{r}
+participant_individual <- df_emp %>%
+  group_by(groupID, subjectID) %>%
+  summarise(
+    age = mean(age),
+    gender = mean(gender),
+    trials = n(),
+    valid_trials = sum(Press == 1, na.rm = TRUE), 
+    P = mean(P),
+    T = mean(T),
+    W = mean(W),
+    .groups = "drop"
+  ) %>%
+  mutate(condition = paste("P=", P, ",T=", T, ",W=", W, sep=""))
+```
+
+```{r}
+participant_individual_match <- df_emp %>%
+  filter(Matchness == "match") %>%
+  mutate(Type = "empirical") %>%
+  group_by(groupID, subjectID) %>%
+  summarise(
+    age = mean(age),
+    gender = mean(gender),
+    trials = n(),
+    valid_trials = sum(Press == 1, na.rm = TRUE), 
+    P = mean(P),
+    T = mean(T),
+    W = mean(W),
+    .groups = "drop"
+  ) %>%
+  mutate(condition = paste("P=", P, ",T=", T, ",W=", W, sep="")) %>%
+  select(condition, subjectID, trials, valid_trials)
+```
+
+```{r}
+participant_group <- participant_individual %>%
+  group_by(groupID) %>%
+  summarise(
+    age_mean = mean(age),
+    age_sd = sd(age),
+    total = n(),  # 总被试数
+    female = sum(gender == 1, na.rm = TRUE),  # 女性被试数
+    female_ratio = female / total,  # 女性被试比例
+    trials = sum(trials, na.rm = TRUE), 
+    pressed_trials = sum(valid_trials, na.rm = TRUE),
+    P = mean(P),
+    T = mean(T),
+    W = mean(W),
+    .groups = "drop"
+  ) %>%
+  mutate(condition = paste("P=", P, ",T=", T, ",W=", W, sep="")) %>%
+  select(-P, -T, -W)
+
+participant_group
+```
+
+## Simulated data
+### data
+```{r}
+# 定义修改数据类型的函数
+convert_data_type_sim <- function(df) {
+  df <- df %>% 
+    dplyr::mutate(
+      groupID = as.numeric(groupID),
+      subjectID = as.numeric(subjectID),
+      trialID = as.numeric(trialID),
+      P = as.numeric(P),
+      T = as.numeric(T),
+      W = as.numeric(W),
+      v = as.numeric(v),
+      a = as.numeric(a),
+      Label = as.character(Label),
+      RT = as.numeric(RT)
+      )
+  return(df)
+}
+```
+
+```{r}
+# 将所有需要读取的数据文件名字保存到名为files的list
+file_sim <- list.files(
+  here::here("Study 4", "data", "sim_data", "final", "250430"), 
+  pattern = "d*\\.csv$", 
+  full.names = TRUE)
+```
+
+```{r}
+df_sim <- data.frame() 
+for (i in seq_along(file_sim)) {
+  # 读取数据
+  df <- read.csv(file_sim[i], header = TRUE) 
+  
+  # 为每个文件添加groupID
+  df$groupID <- i  # i就是根据文件的顺序分配的数字
+  
+  # 合并数据
+  df_sim <- dplyr::bind_rows(df_sim, df)
+}
+
+# 删除临时变量
+rm(df, file_sim, i)
+```
+
+```{r}
+df_sim <- df_sim %>% 
+  convert_data_type_sim() %>%
+  mutate(
+    RT_ms = RT * 1000,  # 将RT转为毫秒
+    Correct = response, 
+    Type = "simulated", # 新建type列，值为"simulated"
+    Press = 1
+    ) %>%  
+  select(groupID, subjectID, Type, trialID, P, T, W, Label, a, v, Press, Correct, RT, RT_ms) %>%
+  mutate(condition = paste("P=", P, ",T=", T, ",W=", W, sep=""))
+```
+
+### parameter
+```{r}
+para_sim <- df_sim %>%
+  select(groupID, subjectID, condition, Label, a, v) %>%
+  rename(label = Label)
+```
+
+```{r}
+para_sim_group <- para_sim %>%
+  group_by(groupID, condition, label) %>%
+    summarise(
+    v = mean(v),
+    a = mean(a),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from = label, 
+    values_from = v
+  ) %>%
+  rename(
+    v_self = self,
+    v_stranger = stranger
+  ) %>%
+  mutate(
+    v_diff = v_self - v_stranger
+  )
+```
+
+```{r}
+para_sim_group_long <- para_sim %>%
+  group_by(groupID, condition, label) %>%
+    summarise(
+    v = mean(v),
+    a = mean(a),
+    .groups = "drop"
+  )
+```
+
+## Combine
+```{r}
+df_combined <- bind_rows(df_emp_match, df_sim) %>%
+  mutate(uniqueID = paste(Type, groupID, subjectID, sep = "_")) %>%
+  group_by(groupID) %>%
+  mutate(Condition = paste("P=", P, ",T=", T, ",W=", W, sep="")) %>%
+  ungroup()
+```
+
+```{r}
+df_group <- df_combined %>%
+  group_by(groupID, Type, Label) %>%
+  summarise(
+    n = n(),
+    mean_RT = mean(RT_ms, na.rm = TRUE),
+    sd_RT = sd(RT_ms, na.rm = TRUE),
+    mean_ACC = mean(Correct == 1, na.rm = TRUE),
+    sd_ACC = sd(Correct == 1, na.rm = TRUE),
+    P = mean(P),
+    T = mean(T),
+    W = mean(W),
+    .groups = "drop"
+    ) %>%
+  group_by(groupID) %>%
+  mutate(Condition = paste("P=", P, ",T=", T, ",W=", W, sep=""),
+         uniqueID = paste(Type, groupID, sep = "_")) %>%
+  ungroup()
+```
+
+```{r}
+df_individual <- df_combined %>%
+  group_by(groupID, subjectID, Type, Label) %>%
+  summarise(
+    n = n(),
+    mean_RT = mean(RT_ms, na.rm = TRUE),
+    sd_RT = sd(RT_ms, na.rm = TRUE),
+    mean_ACC = mean(Correct == 1, na.rm = TRUE),
+    sd_ACC = sd(Correct == 1, na.rm = TRUE),
+    P = mean(P),
+    T = mean(T),
+    W = mean(W),
+    .groups = "drop"
+    ) %>%
+  group_by(groupID) %>%
+  mutate(Condition = paste("P=", P, ",T=", T, ",W=", W, sep=""),
+         uniqueID = paste(Type, groupID, subjectID, sep = "_")) %>%
+  ungroup() %>%
+  mutate(conds = case_when(Label == "self" & Type == "empirical" ~ "0.88",
+                           Label == "stranger" & Type == "empirical" ~ "1.12",
+                           Label == "self" & Type == "simulated" ~ "1.88",
+                           Label == "stranger" & Type == "simulated" ~ "2.12"),
+         conds = as.numeric(conds))
+```
+
+```{r}
+Condition_order <- c("P=0,T=30,W=300", "P=0,T=30,W=600", "P=120,T=30,W=600", "P=120,T=80,W=600",
+                     "P=120,T=30,W=800", "P=120,T=80,W=800", "P=8,T=100,W=1100", "P=120,T=500,W=1500")
+
+df_group$Condition <- factor(df_group$Condition, levels = Condition_order)
+df_individual$Condition <- factor(df_individual$Condition, levels = Condition_order)
+```
+
+## Cohen's d of RT and ACC
+### group
+```{r}
+df_group_wide <- df_group  %>%
+  pivot_wider(
+    id_cols = uniqueID,  
+    names_from = Label,         # 将 Label 作为列名的一部分
+    values_from = c(mean_RT, sd_RT, mean_ACC, sd_ACC, n)  # 转换的列
+  ) %>%
+  left_join(df_group %>%
+              select(uniqueID, Condition, Type, groupID) %>%
+              distinct(), by = "uniqueID")  # 保留 condition 列
+```
+
+```{r}
+# 分组整体: 计算 Cohen's d
+df_group_wide <- df_group_wide %>%
+  mutate(
+    # RT 的 Cohen's d: stranger - self,值越大SPE越大
+    cohen_d_RT = ifelse(
+      !is.na(mean_RT_self) & !is.na(mean_RT_stranger),
+      (mean_RT_stranger - mean_RT_self) / 
+      sqrt(((n_stranger - 1) * sd_RT_stranger^2 + (n_self - 1) * sd_RT_self^2) / 
+           (n_self + n_stranger - 2)),
+      NA
+    ),
+    RT_diff = ifelse(
+      !is.na(mean_RT_self) & !is.na(mean_RT_stranger),
+      mean_RT_stranger - mean_RT_self,
+      NA
+    ),
+    
+    # ACC 的 Cohen's d: self - stranger,值越大SPE越大
+    cohen_d_ACC = ifelse(
+      !is.na(mean_ACC_self) & !is.na(mean_ACC_stranger),
+      (mean_ACC_self - mean_ACC_stranger) / 
+      sqrt(((n_self - 1) * sd_ACC_self^2 + (n_stranger - 1) * sd_ACC_stranger^2) / 
+           (n_self + n_stranger - 2)),
+      NA
+    ),
+    ACC_diff = ifelse(
+      !is.na(mean_ACC_self) & !is.na(mean_ACC_stranger),
+      mean_ACC_self - mean_ACC_stranger,
+      NA
+    )
+  )
+```
+
+### individual
+```{r}
+df_individual_wide <- df_individual  %>%
+  pivot_wider(
+    id_cols = uniqueID,  
+    names_from = Label,         # 将 Label 作为列名的一部分
+    values_from = c(mean_RT, sd_RT, mean_ACC, sd_ACC, n)  # 转换的列
+  ) %>%
+  left_join(df_individual %>%
+              select(uniqueID, Condition, Type, groupID, subjectID) %>%
+              distinct(), by = "uniqueID")  # 保留 condition 列
+```
+
+```{r}
+# 分组个人: 计算 Cohen's d
+df_individual_wide <- df_individual_wide %>%
+  mutate(
+    # RT 的 Cohen's d: stranger - self,值越大SPE越大
+    S_RT = ifelse(
+      !is.na(mean_RT_self) & !is.na(mean_RT_stranger),
+      sqrt(((n_stranger - 1) * sd_RT_stranger^2 + (n_self - 1) * sd_RT_self^2) / 
+           (n_self + n_stranger - 2)),
+      NA
+    ),
+    cohen_d_RT = ifelse(
+      !is.na(mean_RT_self) & !is.na(mean_RT_stranger),
+      (mean_RT_stranger - mean_RT_self) / 
+      sqrt(((n_stranger - 1) * sd_RT_stranger^2 + (n_self - 1) * sd_RT_self^2) / 
+           (n_self + n_stranger - 2)),
+      NA
+    ),
+    diff_RT = ifelse(
+      !is.na(mean_RT_self) & !is.na(mean_RT_stranger),
+      mean_RT_stranger - mean_RT_self,
+      NA
+    ),
+    
+    # ACC 的 Cohen's d: self - stranger,值越大SPE越大
+    S_ACC = ifelse(
+      !is.na(mean_ACC_self) & !is.na(mean_ACC_stranger),
+      sqrt(((n_self - 1) * sd_ACC_self^2 + (n_stranger - 1) * sd_ACC_stranger^2) / 
+           (n_self + n_stranger - 2)),
+      NA
+    ),
+    cohen_d_ACC = ifelse(
+      !is.na(mean_ACC_self) & !is.na(mean_ACC_stranger),
+      (mean_ACC_self - mean_ACC_stranger) / 
+      sqrt(((n_self - 1) * sd_ACC_self^2 + (n_stranger - 1) * sd_ACC_stranger^2) / 
+           (n_self + n_stranger - 2)),
+      NA
+    ),
+    diff_ACC = ifelse(
+      !is.na(mean_ACC_self) & !is.na(mean_ACC_stranger),
+      mean_ACC_self - mean_ACC_stranger,
+      NA
+    )
+  )
+```
+
+# Description
+## RT
+```{r}
+b1 <- ggplot(df_group, 
+       aes(x = Label, y = mean_RT, color = Type, shape = Type)) +
+  geom_point(size = 3.5, position = position_dodge(0.5)) +  # 绘制点
+  geom_errorbar(aes(ymin = mean_RT - sd_RT, ymax = mean_RT + sd_RT),
+                width = .1,
+                position = position_dodge(0.5)) +  # 添加误差条
+  labs(x = "Design", y = "Reaction Time") +
+  facet_wrap(~ Condition, nrow = 2) +  # 按 Condition 分面  , scales = "free_y"
+  scale_y_continuous(breaks = seq(0, 1400, by = 200)) +
+  papaja::theme_apa() +
+  scale_color_manual(values = c("simulated" = "#12264f", "empirical" = "#a72126"))  # 自定义颜色
+
+b1
+```
+
+```{r}
+RT <- b1 +
+  geom_jitter(
+    data = df_individual,
+    aes(x = Label, y = mean_RT, color = Type, shape = Type),
+    size = 2.5, alpha = 0.3, 
+    position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5)) +  # 添加jitter和dodge
+  labs(x = "Design", y = "RT") +
+  papaja::theme_apa() +
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"), # x轴标题字体大小
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"), # y轴标题字体大小
+    axis.text.x = element_text(size = 19, face = "bold", color = "black"),  # x轴刻度标签字体大小
+    axis.text.y = element_text(size = 19, face = "bold", color = "black"),  # y轴刻度标签字体大小
+    strip.text = element_text(size = 18, face = "bold", color = "black"),   # 分面标签字体大小
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+
+RT
+```
+
+```{r}
+ggsave("RT.png", 
+       plot = RT, 
+       width = 11, 
+       height = 7, 
+       dpi = 300)
+```
+
+## ACC
+```{r}
+b2 <- ggplot(df_group, 
+             aes(x = Label, y = mean_ACC, color = Type, shape = Type)) +
+  geom_point(size = 3.5,
+             position = position_dodge(0.5)) +
+  geom_errorbar(aes(ymin = mean_ACC - sd_ACC,
+                    ymax = mean_ACC + sd_ACC),
+                width = .1,
+                position = position_dodge(0.5)) +
+  labs(x = "Design", y = "ACC") +
+  facet_wrap(~ Condition, nrow = 2) +
+  scale_y_continuous(breaks = seq(0, 1.2, by = 0.2)) +
+  papaja::theme_apa() +
+  scale_color_manual(values = c("simulated" = "#12264f", "empirical" = "#a72126"))  # 自定义颜色
+
+b2
+```
+
+```{r}
+ACC <- b2 +
+  geom_jitter(
+    data = df_individual,
+    aes(x = Label, y = mean_ACC, color = Type, shape = Type),
+    size = 2.5, alpha = 0.3, 
+    position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5)) +  # 添加jitter和dodge
+  labs(x = "Design", y = "ACC") +
+  papaja::theme_apa() +
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"), # x轴标题字体大小
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"), # y轴标题字体大小
+    axis.text.x = element_text(size = 19, face = "bold", color = "black"),  # x轴刻度标签字体大小
+    axis.text.y = element_text(size = 19, face = "bold", color = "black"),  # y轴刻度标签字体大小
+    strip.text = element_text(size = 18, face = "bold", color = "black"),   # 分面标签字体大小
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+
+ACC
+```
+
+```{r}
+ggsave("ACC.png", 
+       plot = ACC, 
+       width = 11, 
+       height = 7, 
+       dpi = 300)
+```
+
+## Cohen's d for RT
+```{r}
+cd_RT <- ggplot(df_individual_wide, 
+                aes(x = Condition, y = cohen_d_RT, color = Type, shape = Type)) +
+  geom_boxplot(aes(fill = Type), alpha = 0.2, outlier.shape = NA) +  # 绘制箱线图并调整透明度
+  geom_jitter(size = 2.5, alpha = 0.5, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75)) +  # 调整点的位置
+  labs(x = "Design", y = "cohen's d RT") +
+  papaja::theme_apa() +
+  scale_y_continuous(breaks = seq(-1, 2, by = 0.5)) +
+  scale_color_manual(values = c("simulated" = "#12264f", "empirical" = "#a72126")) +  # 设置点的颜色
+  scale_fill_manual(values = c("simulated" = "#12264f", "empirical" = "#a72126")) +
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+
+cd_RT
+```
+
+```{r}
+ggsave("cd_RT.png", 
+       plot = cd_RT, 
+       width = 16, 
+       height = 7, 
+       dpi = 300)
+```
+
+## Cohen's d for ACC
+```{r}
+cd_ACC <- ggplot(df_individual_wide, 
+                 aes(x = Condition, y = cohen_d_ACC, color = Type, shape = Type)) +
+  geom_boxplot(aes(fill = Type), alpha = 0.2, outlier.shape = NA) +  # 绘制箱线图并调整透明度
+  geom_jitter(size = 2.5, alpha = 0.5, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75)) +  # 调整点的位置
+  labs(x = "Design", y = "cohen's d ACC") +
+  papaja::theme_apa() +
+  scale_color_manual(values = c("simulated" = "#12264f", "empirical" = "#a72126")) +  # 设置点的颜色
+  scale_fill_manual(values = c("simulated" = "#12264f", "empirical" = "#a72126")) +  # 设置箱线图的填充颜色
+  scale_y_continuous(breaks = seq(-1, 1.5, by = 0.2)) +
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+
+cd_ACC
+```
+
+```{r}
+ggsave("cd_ACC.png", 
+       plot = cd_ACC, 
+       width = 16, 
+       height = 7, 
+       dpi = 300)
+```
+
+```{r}
+# 拼图
+combined_plot1 <- RT / ACC +
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+
+# 显示图
+combined_plot1
+```
+
+```{r}
+ggsave("combined_plot1.png", 
+       plot = combined_plot1, 
+       width = 15, 
+       height = 13, 
+       dpi = 300)
+```
+
+```{r}
+# 拼图
+combined_plot2 <- cd_RT / cd_ACC +
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+
+# 显示图
+combined_plot2
+```
+
+```{r}
+ggsave("combined_plot2.png", 
+       plot = combined_plot2, 
+       width = 24, 
+       height = 13, 
+       dpi = 300)
+```
+
+# Bootstrap(group level)
+```{r}
+emp_bootstrap <- df_emp_match %>%
+  filter(!is.na(RT_ms)) %>% 
+  mutate(
+    uniqueID = paste(groupID, subjectID, Label, sep = "_"),
+    subjID = paste(groupID, subjectID, sep = "_")
+      )
+```
+
+## Return Cohen's d
+### RT
+```{r}
+# bootstrap过程
+set.seed(522)
+
+emp_bootstrap_cd_RT <- lapply(split(emp_bootstrap, emp_bootstrap$groupID), function(group_data) {
+  boot(data = as.data.frame(group_data), statistic = function(data, indices) {
+    
+    # 获取每个被试的数据
+    sampled_data <- data[indices, ]
+    
+    # 按照 label 分组 (self 和 stranger)
+    group_self <- sampled_data[sampled_data$Label == "self", "RT_ms"]
+    group_stranger <- sampled_data[sampled_data$Label == "stranger", "RT_ms"]
+    
+    # 计算 mean_RT 和 sd_RT
+    mean_RT_self <- mean(group_self, na.rm = TRUE)
+    mean_RT_stranger <- mean(group_stranger, na.rm = TRUE)
+    sd_RT_self <- sd(group_self, na.rm = TRUE)
+    sd_RT_stranger <- sd(group_stranger, na.rm = TRUE)
+    
+    # 计算 Cohen's d RT: stranger - self
+    d <- (mean_RT_stranger - mean_RT_self) / 
+      sqrt(((length(group_stranger) - 1) * sd_RT_stranger^2 + (length(group_self) - 1) * sd_RT_self^2) / (length(group_self) + length(group_stranger) - 2))
+    
+    return(c(mean_RT_self = mean_RT_self, mean_RT_stranger = mean_RT_stranger, cohen_d = d))
+  }, R = 5000)
+})
+
+# emp_bootstrap_cd_RT
+```
+
+```{r}
+# 提取 bootstrap 结果 + 95% CI
+emp_bootstrap_cd_RT_df <- do.call(rbind, lapply(seq_along(emp_bootstrap_cd_RT), function(i) {
+  boot_obj <- emp_bootstrap_cd_RT[[i]]
+  groupID <- names(emp_bootstrap_cd_RT)[i]
+  
+  # 提取 95% CI for cohen_d
+  ci <- tryCatch({
+    boot.ci(boot_obj, type = "perc", index = 3)$perc[4:5]
+  }, error = function(e) c(NA, NA))  # 防止个别被试失败（例如方差为0）
+
+  # 每次抽样的结果
+  df <- as.data.frame(boot_obj$t) %>%
+    setNames(c("mean_RT_self", "mean_RT_stranger", "Cohen_d_RT")) %>%
+    mutate(
+      d_lower = ci[1],
+      d_upper = ci[2],
+      groupID = groupID
+    )
+  return(df)
+}))
+```
+
+### ACC
+```{r}
+# bootstrap过程
+set.seed(522)
+
+emp_bootstrap_cd_ACC <- lapply(split(emp_bootstrap, emp_bootstrap$groupID), function(group_data) {
+  boot(data = as.data.frame(group_data), statistic = function(data, indices) {
+    
+    # 获取每个被试的数据
+    sampled_data <- data[indices, ]
+    
+    # 按照 label 分组 (self 和 stranger)
+    group_self <- sampled_data[sampled_data$Label == "self", "Correct"]
+    group_stranger <- sampled_data[sampled_data$Label == "stranger", "Correct"]
+    
+    # 计算 mean_ACC 和 sd_ACC
+    mean_ACC_self <- mean(group_self == 1, na.rm = TRUE)
+    mean_ACC_stranger <- mean(group_stranger == 1, na.rm = TRUE)
+    sd_ACC_self <- sd(group_self == 1, na.rm = TRUE)
+    sd_ACC_stranger <- sd(group_stranger == 1, na.rm = TRUE)
+    
+    # 计算 Cohen's d ACC: self - stranger
+    d <- (mean_ACC_self - mean_ACC_stranger) / 
+      sqrt(((length(group_stranger) - 1) * sd_ACC_stranger^2 + (length(group_self) - 1) * sd_ACC_self^2) / 
+           (length(group_self) + length(group_stranger) - 2))
+    
+    return(c(mean_ACC_self = mean_ACC_self, mean_ACC_stranger = mean_ACC_stranger, cohen_d = d))
+  }, R = 5000)
+})
+
+# emp_bootstrap_cd_ACC
+```
+
+```{r}
+# 提取 bootstrap 结果 + 95% CI
+emp_bootstrap_cd_ACC_df <- do.call(rbind, lapply(seq_along(emp_bootstrap_cd_ACC), function(i) {
+  boot_obj <- emp_bootstrap_cd_ACC[[i]]
+  groupID <- names(emp_bootstrap_cd_ACC)[i]
+  
+  # 提取 95% CI for cohen_d
+  ci <- tryCatch({
+    boot.ci(boot_obj, type = "perc", index = 3)$perc[4:5]
+  }, error = function(e) c(NA, NA))  # 防止个别被试失败（例如方差为0）
+
+  # 每次抽样的结果
+  df <- as.data.frame(boot_obj$t) %>%
+    setNames(c("mean_ACC_self", "mean_ACC_stranger", "Cohen_d_ACC")) %>%
+    mutate(
+      d_lower = ci[1],
+      d_upper = ci[2],
+      groupID = groupID
+    )
+  return(df)
+}))
+```
+
+## Ridge Plot
+```{r}
+df_emp_individual_wide <- df_individual_wide %>%
+  filter(Type == "empirical" & groupID != 7) %>%
+  unite(subjID, groupID, subjectID, sep = "_", remove = FALSE) %>%
+  select(subjID, groupID, subjectID, cohen_d_RT, cohen_d_ACC)
+
+df_emp_group_wide <- df_group_wide %>%
+  filter(Type == "empirical" & groupID != 7) %>%
+  select(groupID, cohen_d_RT, cohen_d_ACC)
+
+Condition_order <- c("P=0,T=30,W=300", "P=0,T=30,W=600", "P=120,T=30,W=600", "P=120,T=80,W=600",
+                     "P=120,T=30,W=800", "P=120,T=80,W=800", "P=8,T=100,W=1100", "P=120,T=500,W=1500")
+
+# 确保 groupID 是因子类型，并按照你的顺序排列
+df_emp_individual_wide$groupID <- factor(df_emp_individual_wide$groupID, 
+                                         levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+```
+
+```{r}
+# 将 mean_RT_self 和 mean_RT_stranger 转成长格式
+emp_bootstrap_RT_long <- emp_bootstrap_cd_RT_df %>%
+  select(groupID, mean_RT_self, mean_RT_stranger) %>%
+  pivot_longer(cols = c(mean_RT_self, mean_RT_stranger),
+               names_to = "label", 
+               values_to = "RT_ms") %>%
+  mutate(label = ifelse(label == "mean_RT_self", "self", "stranger"))
+```
+
+```{r}
+# 将 mean_ACC_self 和 mean_ACC_stranger 转成长格式
+emp_bootstrap_ACC_long <- emp_bootstrap_cd_ACC_df %>%
+  select(groupID, mean_ACC_self, mean_ACC_stranger) %>%
+  pivot_longer(cols = c(mean_ACC_self, mean_ACC_stranger),
+               names_to = "label", 
+               values_to = "ACC") %>%
+  mutate(label = ifelse(label == "mean_ACC_self", "self", "stranger"))
+```
+
+```{r}
+emp_bootstrap_cd_RT_df_sum <- emp_bootstrap_cd_RT_df %>%
+  group_by(groupID) %>%
+  summarise(
+    d_lower = mean(d_lower),
+    d_upper = mean(d_upper)
+  )
+
+emp_bootstrap_cd_ACC_df_sum <- emp_bootstrap_cd_ACC_df %>%
+  group_by(groupID) %>%
+  summarise(
+    d_lower = mean(d_lower),
+    d_upper = mean(d_upper)
+  )
+```
+
+### RT
+```{r}
+emp_bootstrap_cd_RT_df$groupID <- factor(emp_bootstrap_cd_RT_df$groupID, 
+                                         levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+
+emp_bootstrap_RT_long$groupID <- factor(emp_bootstrap_RT_long$groupID, 
+                                         levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+```
+
+```{r}
+emp_bootstrap_cd_RT_df_s3 <- emp_bootstrap_cd_RT_df %>%
+  filter(groupID != 8 & groupID != 9)
+emp_bootstrap_RT_long_s3 <- emp_bootstrap_RT_long %>%
+  filter(groupID != 8 & groupID != 9)
+
+
+emp_bootstrap_cd_ACC_df_s3 <- emp_bootstrap_cd_ACC_df %>%
+  filter(groupID != 8 & groupID != 9)
+emp_bootstrap_ACC_long_s3 <- emp_bootstrap_ACC_long %>%
+  filter(groupID != 8 & groupID != 9)
+
+Condition_order_s3 <- c("P=0,T=30,W=300", "P=0,T=30,W=600", "P=120,T=30,W=600", "P=120,T=80,W=600",
+                     "P=8,T=100,W=1100", "P=120,T=500,W=1500")
+```
+
+```{r}
+self_RT_check <- emp_bootstrap_cd_RT_df %>%
+  group_by(groupID) %>%
+  filter(mean_RT_self == max(mean_RT_self, na.rm = TRUE)) %>%
+  ungroup()
+
+self_RT_check
+```
+
+```{r}
+stranger_RT_check <- emp_bootstrap_cd_RT_df %>%
+  group_by(groupID) %>%
+  filter(mean_RT_stranger == max(mean_RT_stranger, na.rm = TRUE)) %>%
+  ungroup()
+
+stranger_RT_check
+```
+
+```{r}
+Ridge_cd_RT <- ggplot() +
+  # 绘制分布（emp_bootstrap_cd_RT_df）
+  geom_density_ridges2(
+    data = emp_bootstrap_cd_RT_df, 
+    aes(x = Cohen_d_RT, y = factor(groupID)),
+    scale = 0.9,
+    fill = "#594c57",
+    alpha = 0.6,
+    color = NA  # 去掉描边线
+    ) +
+  # 绘制bootstrap 95%CI（emp_bootstrap_cd_RT_df）
+  geom_segment(
+    data = emp_bootstrap_cd_RT_df,
+    aes(x = d_lower, xend = d_upper, y = groupID, yend = groupID),
+    color = "black",
+    size = 1.2
+  ) +
+  scale_x_continuous(
+    limits = c(-0.5, 0.5),  # 设置x轴的显示范围
+    breaks = seq(-1.5, 2, by = 0.5)  # 设置x轴每0.5为一个刻度
+    ) +
+  scale_y_discrete(
+    labels = Condition_order  # 设置每个 groupID 对应的标签
+  ) +
+  labs(
+    x = "Cohen's d RT",
+    y = "Design"
+  ) +
+  papaja::theme_apa() +
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", size = 1)
+
+Ridge_cd_RT
+```
+
+```{r}
+RT_theoretical <- data.frame(
+  groupID = c(1, 2, 3, 4, 8, 9, 5, 6),
+  RT_theoretical = c(330, 630, 630, 680, 830, 880, 1200, 2000)
+)
+
+RT_theoretical$groupID <- factor(RT_theoretical$groupID, levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+```
+
+```{r}
+Ridge_RT <- ggplot(emp_bootstrap_RT_long) +
+  geom_density_ridges(
+    aes(x = RT_ms, y = factor(groupID), fill = label),
+    scale = 0.9,
+    alpha = 0.7,
+    color = NA  # 去掉描边线
+  ) +
+  scale_fill_manual(values = c("self" = "#12264f", "stranger" = "#a72126")) +
+  scale_x_continuous(
+    limits = c(200, 2100),  # 设置x轴的显示范围
+    breaks = seq(200, 2000, by = 200)  # 设置x轴每200为一个刻度
+    ) +
+  scale_y_discrete(
+    labels = Condition_order  # 设置每个 groupID 对应的标签
+  ) +
+  labs(
+    x = "RT(ms)",
+    y = "Design",
+    fill = "Label"
+  ) +
+  papaja::theme_apa() +
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  ) +
+  geom_text(
+    data = RT_theoretical,
+    aes(x = RT_theoretical, y = factor(groupID), label = round(RT_theoretical, 0)),
+    color = "black",
+    size = 4,
+    hjust = -0.2  # 控制文字相对于点的位置
+  ) +
+  geom_segment(
+    data = RT_theoretical,
+    aes(x = RT_theoretical, xend = RT_theoretical,
+        y = as.numeric(factor(groupID)) - 0.4,  # 调整线条上下位置
+        yend = as.numeric(factor(groupID)) + 0.4),
+    color = "black",
+    linetype = "dashed",
+    linewidth = 1
+  )
+
+
+Ridge_RT
+```
+
+```{r}
+# 移除右图的 y 轴元素
+Ridge_RT_clean <- Ridge_RT +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+# 左右合并
+Combined_Ridge_RT <- Ridge_cd_RT | Ridge_RT_clean +
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+
+Combined_Ridge_RT
+```
+
+### ACC
+```{r}
+emp_bootstrap_cd_ACC_df$groupID <- factor(emp_bootstrap_cd_ACC_df$groupID, 
+                                         levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+
+emp_bootstrap_ACC_long$groupID <- factor(emp_bootstrap_ACC_long$groupID, 
+                                         levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+```
+
+```{r}
+Ridge_cd_ACC <- ggplot() +
+  # 绘制分布（emp_bootstrap_cd_ACC_df）
+  geom_density_ridges(
+    data = emp_bootstrap_cd_ACC_df, 
+    aes(x = Cohen_d_ACC, y = factor(groupID)),
+    scale = 0.9,
+    fill = "#594c57",
+    alpha = 0.6,
+    color = NA  # 去掉描边线
+    ) +
+  # 绘制bootstrap 95%CI（emp_bootstrap_cd_ACC_df）
+  geom_segment(
+    data = emp_bootstrap_cd_ACC_df,
+    aes(x = d_lower, xend = d_upper, y = groupID, yend = groupID),
+    color = "black",
+    size = 1.2
+  ) +
+  scale_x_continuous(
+    limits = c(-0.5, 1),  # 设置x轴的显示范围
+    breaks = seq(-3, 3, by = 0.5)  # 设置x轴每0.5为一个刻度
+    ) +
+  scale_y_discrete(
+    labels = Condition_order  # 设置每个 groupID 对应的标签
+  ) +
+  labs(
+    x = "Cohen's d ACC",
+    y = "Design"
+  ) +
+  papaja::theme_apa() +
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", size = 1)
+
+Ridge_cd_ACC
+```
+
+```{r}
+Ridge_ACC <- ggplot(emp_bootstrap_ACC_long) +
+  geom_density_ridges(
+    aes(x = ACC, y = factor(groupID), fill = label),
+    scale = 0.7,
+    alpha = 0.7,
+    color = NA  # 去掉描边线
+  ) +
+  scale_fill_manual(values = c("self" = "#12264f", "stranger" = "#a72126")) +
+  scale_y_discrete(
+    labels = Condition_order  # 设置每个 groupID 对应的标签
+  ) +
+  labs(
+    x = "ACC",
+    y = "Design",
+    fill = "Label"
+  ) +
+  papaja::theme_apa() +
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+
+Ridge_ACC
+```
+
+```{r}
+# 移除右图的 y 轴元素
+Ridge_ACC_clean <- Ridge_ACC +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+# 左右合并
+Combined_Ridge_ACC <- Ridge_cd_ACC | Ridge_ACC_clean +
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+
+Combined_Ridge_ACC
+```
+
+### Combine
+```{r}
+# 只对后面三个图移除 y 轴
+Ridge_RT_clean <- Ridge_RT + theme(axis.title.y = element_blank(),
+                                   axis.text.y = element_blank(),
+                                   axis.ticks.y = element_blank())
+
+Ridge_cd_ACC_clean <- Ridge_cd_ACC + theme(axis.title.y = element_blank(),
+                                           axis.text.y = element_blank(),
+                                           axis.ticks.y = element_blank())
+
+Ridge_ACC_clean <- Ridge_ACC + theme(axis.title.y = element_blank(),
+                                     axis.text.y = element_blank(),
+                                     axis.ticks.y = element_blank())
+
+# 拼图
+Combined_Ridge <- 
+  Ridge_cd_RT + Ridge_RT_clean + Ridge_cd_ACC_clean + Ridge_ACC_clean +
+  plot_layout(ncol = 4, guides = "collect") & 
+  theme(legend.position = "bottom")
+
+# 显示图
+Combined_Ridge
+```
+
+```{r}
+ggsave("Ridge_s4.png", 
+       plot = Combined_Ridge, 
+       width = 34, 
+       height = 10, 
+       dpi = 300)
+```
+
+# Parameter
+```{r}
+# 替换 groupID 中的值
+para_sim_group$groupID[para_sim_group$groupID == 8] <- 9
+para_sim_group$groupID[para_sim_group$groupID == 7] <- 8
+
+para_sim_group_long$groupID[para_sim_group_long$groupID == 8] <- 9
+para_sim_group_long$groupID[para_sim_group_long$groupID == 7] <- 8
+```
+
+```{r}
+Condition_order <- c("P=0,T=30,W=300", "P=0,T=30,W=600", "P=120,T=30,W=600", "P=120,T=80,W=600",
+                     "P=120,T=30,W=800", "P=120,T=80,W=800", "P=8,T=100,W=1100", "P=120,T=500,W=1500")
+
+# 确保 groupID 是因子类型，并按照你的顺序排列
+para_sim_group$groupID <- factor(para_sim_group$groupID, 
+                                 levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+para_emp_individual$groupID <- factor(para_emp_individual$groupID, 
+                                      levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+```
+
+```{r}
+group_labels <- c(
+  "1" = "P=0,T=30,W=300",
+  "2" = "P=0,T=30,W=600",
+  "3" = "P=120,T=30,W=600",
+  "4" = "P=120,T=80,W=600",
+  "8" = "P=120,T=30,W=800",
+  "9" = "P=120,T=80,W=800",
+  "5" = "P=8,T=100,W=1100",
+  "6" = "P=120,T=500,W=1500"
+)
+```
+
+## v
+### Scar Plot
+```{r}
+# emp vs sim
+diff_v <- ggplot(para_emp_individual, aes(x = factor(groupID), y = v_diff)) +
+  # 对实证数据的散点使用 position_jitter 让其围绕模拟数据的点
+  geom_point(position = position_jitter(width = 0.2, height = 0.3), 
+             color = "#a3bbdb", size = 2.5, alpha = 0.9) +  
+  # 在模拟数据上绘制固定的红色点
+  geom_point(data = para_sim_group, aes(x = factor(groupID), y = v_diff), 
+             color = "#d24735", shape = 17, size = 4.5, alpha = 0.7) +
+  labs(
+    x = "Condition", 
+    y = "v self - v stranger"
+  ) +
+  scale_x_discrete(labels = Condition_order) + 
+  papaja::theme_apa()
+
+diff_v
+```
+
+```{r}
+ggsave("fastdm_vdiff_vz.png", 
+       plot = diff_v, 
+       width = 11, 
+       height = 5, 
+       dpi = 300)
+```
+
+```{r}
+# emp vs sim
+# 让 jitter 可重复（固定随机种子）
+set.seed(123)  
+# 预先计算 jitter 后的 x 位置
+para_emp_long <- para_emp_long %>%
+  mutate(x_jitter = as.numeric(factor(label)) + runif(n(), -0.05, 0.05)) 
+
+# 绘图
+emp_v <- ggplot(para_emp_long, aes(x = factor(label), y = v)) +
+  # 连接线，确保每个 subjectID 连接自己的点
+  geom_line(aes(x = x_jitter, group = subjectID), color = "grey70", size = 0.8, alpha = 0.6) +  
+  # 绘制 jitter 后的点
+  geom_point(aes(x = x_jitter), color = "#a3bbdb", size = 2.5, alpha = 0.9) +
+  # 在模拟数据上绘制固定的红色点（仍然使用 factor(label) 以保持对齐）
+  geom_point(data = para_sim_group_long, 
+             aes(x = factor(label), y = v), 
+             inherit.aes = FALSE,
+             color = "#d24735", shape = 17, size = 4.5, alpha = 0.7) +
+  # 绘制红色线连接模拟数据点
+  geom_line(data = para_sim_group_long, 
+            aes(group = groupID), 
+            color = "#d24735", size = 1.2, alpha = 0.7) + 
+  labs(
+    x = "Label", 
+    y = "v"
+  ) +
+  # 保持 x 轴显示 "self" 和 "stranger"
+  scale_x_discrete(labels = c("self", "stranger")) + 
+  facet_wrap(~ groupID, labeller = as_labeller(group_labels), nrow = 2) + 
+  papaja::theme_apa()
+
+emp_v
+```
+
+```{r}
+ggsave("fastdm_v_vz.png", 
+       plot = emp_v, 
+       width = 9, 
+       height = 7, 
+       dpi = 300)
+```
+
+### Bootstrap(subject level)
+```{r}
+# 定义bootstrap函数，计算均值
+boot_v <- function(data, indices) {
+  d <- data[indices, ]  # 重新抽样数据
+  return(mean(d$v_diff))  # 计算均值
+}
+```
+
+```{r}
+# 对每个组进行 bootstrap
+set.seed(034)
+
+v_res <- lapply(split(para_emp_individual, para_emp_individual$groupID), function(group_data) {
+  boot(data = group_data, statistic = boot_v, R = 5000)  # R 代表重复抽样次数
+})
+
+# v_res
+```
+
+```{r}
+# 转换 bootstrap 结果为 data.frame 以便 ggplot2 可用
+v_res_df <- do.call(rbind, lapply(names(v_res), function(group) {
+  ci <- boot.ci(v_res[[group]], type = "bca")$bca[4:5]
+  data.frame(groupID = group, boot_means = v_res[[group]]$t, lower_ci = ci[1], upper_ci = ci[2])
+}))
+```
+
+```{r}
+# 按分组计算均值和 95% 置信区间
+v_res_sum <- v_res_df %>%
+  group_by(groupID) %>%
+  summarise(
+    mean_val = mean(boot_means),
+    lower_ci = mean(lower_ci), 
+    upper_ci = mean(upper_ci)
+  )
+```
+
+#### General
+```{r}
+# 确保 groupID 是因子类型，并按照你的顺序排列
+v_res_df$groupID <- factor(v_res_df$groupID, levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+v_res_sum$groupID <- factor(v_res_sum$groupID, levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+```
+
+```{r}
+colors <- RColorBrewer::brewer.pal(8, "RdBu")
+
+vdiff_bootstrap <- ggplot(v_res_df, aes(x = factor(groupID), y = boot_means, fill = factor(groupID))) +
+  # 半小提琴图
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.6) +
+  # 透明 bootstrap 散点（叠加在 95% CI 上）
+  geom_jitter(aes(color = factor(groupID)), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 用 crossbar 画 95% CI
+  geom_crossbar(data = v_res_sum, aes(x = factor(groupID), y = mean_val, ymin = lower_ci, ymax = upper_ci), 
+                width = 0.15, color = "black", alpha = 0.2) + 
+  # 添加 sim_data 的均值点
+  geom_point(data = para_sim_group, aes(x = factor(groupID), y = v_diff), 
+             color = "black", shape = 17, size = 4) +  
+  # 添加 y=0 的虚线
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+  # 设置调色板
+  scale_fill_manual(values = colors) + 
+  scale_color_manual(values = colors) + 
+  # 更改 x 轴标签
+  scale_x_discrete(labels = Condition_order) + 
+  scale_y_continuous(breaks = seq(-1, 6, by = 1)) +
+  # 主题设置
+  labs(
+    x = "Condition",
+    y = "Bootstrap Means"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none") +  # 隐藏图例
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+
+vdiff_bootstrap
+```
+
+```{r}
+ggsave("bootstrap_vdiff_vz.png", 
+       plot = vdiff_bootstrap, 
+       width = 29, 
+       height = 7, 
+       dpi = 300)
+```
+
+#### T effect
+```{r}
+v_res_df1 <- v_res_df %>%
+  filter(groupID == 8 | groupID == 9)
+v_res_sum1 <- v_res_sum %>%
+  filter(groupID == 8 | groupID == 9)
+sim_v_group1 <- para_sim_group %>%
+  filter(groupID == 8 | groupID == 9)
+```
+
+```{r}
+colors <- c("#B61D2F", "#2769AF")
+
+vdiff_bootstrap1 <- ggplot(v_res_df1, aes(x = factor(groupID), y = boot_means, fill = factor(groupID))) +
+  # 半小提琴图
+  stat_halfeye(adjust = 1, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.6) +
+  # 透明 bootstrap 散点（叠加在 95% CI 上）
+  geom_jitter(aes(color = factor(groupID)), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 用 crossbar 画 95% CI
+  geom_crossbar(data = v_res_sum1, aes(x = factor(groupID), y = mean_val, ymin = lower_ci, ymax = upper_ci), 
+                width = 0.15, color = "black", alpha = 0.2) + 
+  # 添加 sim_data 的均值点
+  geom_point(data = sim_v_group1, aes(x = factor(groupID), y = v_diff), 
+             color = "black", shape = 17, size = 4) +  
+  # 添加 y=0 的虚线
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+  # 设置调色板
+  scale_fill_manual(values = colors) + 
+  scale_color_manual(values = colors) + 
+  # 更改 x 轴标签
+  scale_x_discrete(labels = group_labels) + 
+  # 主题设置
+  labs(
+    x = "Condition",
+    y = "Bootstrap Means"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none") +  # 隐藏图例
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+  
+vdiff_bootstrap1
+```
+
+```{r}
+ggsave("bootstrap_vdiff_g8g9.png", 
+       plot = vdiff_bootstrap1, 
+       width = 9, 
+       height = 5, 
+       dpi = 300)
+```
+
+```{r}
+v_res_df2 <- v_res_df %>%
+  filter(groupID == 3 | groupID == 4)
+v_res_sum2 <- v_res_sum %>%
+  filter(groupID == 3 | groupID == 4)
+sim_v_group2 <- para_sim_group %>%
+  filter(groupID == 3 | groupID == 4)
+```
+
+```{r}
+colors <- c("#B61D2F", "#2769AF")
+
+vdiff_bootstrap2 <- ggplot(v_res_df2, aes(x = factor(groupID), y = boot_means, fill = factor(groupID))) +
+  # 半小提琴图
+  stat_halfeye(adjust = 1, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.6) +
+  # 透明 bootstrap 散点（叠加在 95% CI 上）
+  geom_jitter(aes(color = factor(groupID)), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 用 crossbar 画 95% CI
+  geom_crossbar(data = v_res_sum2, aes(x = factor(groupID), y = mean_val, ymin = lower_ci, ymax = upper_ci), 
+                width = 0.15, color = "black", alpha = 0.2) + 
+  # 添加 sim_data 的均值点
+  geom_point(data = sim_v_group2, aes(x = factor(groupID), y = v_diff), 
+             color = "black", shape = 17, size = 4) +  
+  # 添加 y=0 的虚线
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+  # 设置调色板
+  scale_fill_manual(values = colors) + 
+  scale_color_manual(values = colors) + 
+  # 更改 x 轴标签
+  scale_x_discrete(labels = group_labels) + 
+  # 主题设置
+  labs(
+    x = "Condition",
+    y = "Bootstrap Means"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none") +  # 隐藏图例
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+  
+vdiff_bootstrap2
+```
+
+```{r}
+ggsave("bootstrap_vdiff_g3g4.png", 
+       plot = vdiff_bootstrap2, 
+       width = 9, 
+       height = 5, 
+       dpi = 300)
+```
+
+```{r}
+v_res_df3 <- v_res_df %>%
+  filter(groupID == 3 | groupID == 4 | groupID == 8 | groupID == 9)
+v_res_sum3 <- v_res_sum %>%
+  filter(groupID == 3 | groupID == 4 | groupID == 8 | groupID == 9)
+sim_v_group3 <- para_sim_group %>%
+  filter(groupID == 3 | groupID == 4 | groupID == 8 | groupID == 9)
+```
+
+```{r}
+colors <- RColorBrewer::brewer.pal(4, "RdBu")
+
+vdiff_bootstrap3 <- ggplot(v_res_df3, aes(x = factor(groupID), y = boot_means, fill = factor(groupID))) +
+  # 半小提琴图
+  stat_halfeye(adjust = 1, justification = -0.2, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.6) +
+  # 透明 bootstrap 散点（叠加在 95% CI 上）
+  geom_jitter(aes(color = factor(groupID)), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 用 crossbar 画 95% CI
+  geom_crossbar(data = v_res_sum3, aes(x = factor(groupID), y = mean_val, ymin = lower_ci, ymax = upper_ci), 
+                width = 0.15, color = "black", alpha = 0.2) + 
+  # 添加 sim_data 的均值点
+  geom_point(data = sim_v_group3, aes(x = factor(groupID), y = v_diff), 
+             color = "black", shape = 17, size = 4) +  
+  # 添加 y=0 的虚线
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+  # 设置调色板
+  scale_fill_manual(values = colors) + 
+  scale_color_manual(values = colors) + 
+  # 更改 x 轴标签
+  scale_x_discrete(labels = group_labels) + 
+  # 主题设置
+  labs(
+    x = "Condition",
+    y = "Bootstrap Means"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none") +  # 隐藏图例
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+  
+vdiff_bootstrap3
+```
+
+```{r}
+ggsave("bootstrap_vdiff.png", 
+       plot = vdiff_bootstrap3, 
+       width = 15, 
+       height = 6, 
+       dpi = 300)
+```
+
+### Bootstrap(condition level)
+```{r}
+# 定义我们要比较的 group 对
+group_pairs <- list(
+  # c(2, 1), # 提升反应窗口(a)
+  c(3, 2), # 提升练习试次数量(vdiff)
+  c(4, 3), # 提升刺激呈现时间(a, vdiff)
+  c(9, 8)  # 提升刺激呈现时间(a, vdiff)
+)
+```
+
+```{r}
+# Bootstrap 差值函数（单对 group）
+boot_group_vdiff <- function(data_A, data_B, R = 5000) {
+  n_A <- nrow(data_A)
+  n_B <- nrow(data_B)
+  
+  replicate(R, {
+    v_A <- mean(sample(data_A$v_diff, n_A, replace = TRUE))
+    v_B <- mean(sample(data_B$v_diff, n_B, replace = TRUE))
+    v_A - v_B
+  })
+}
+```
+
+```{r}
+# 储存结果
+v_boot_results <- list()
+
+# 对每一对进行 bootstrap
+set.seed(34)
+for (pair in group_pairs) {
+  gA <- pair[1]
+  gB <- pair[2]
+  
+  data_A <- para_emp_individual %>% filter(groupID == gA)
+  data_B <- para_emp_individual %>% filter(groupID == gB)
+  
+  diffs <- boot_group_vdiff(data_A, data_B, R = 2000)
+  
+  v_boot_results[[paste0(gA, "-", gB)]] <- data.frame(
+    groupA = gA,
+    groupB = gB,
+    diff = diffs
+  )
+}
+```
+
+```{r}
+# 合并为一个大表
+v_group_diff <- bind_rows(v_boot_results, .id = "comparison")
+
+# 计算均值和 95% CI
+v_group_diff_summary <- v_group_diff %>%
+  group_by(comparison) %>%
+  summarise(
+    mean_diff = mean(diff),
+    lower_ci = quantile(diff, 0.025),
+    upper_ci = quantile(diff, 0.975)
+  )
+print(v_group_diff_summary)
+```
+
+#### v sim group diff
+```{r}
+# 创建一个新的数据框来存储每一组差异
+v_sim_diff <- data.frame(pair = character(), v_diff_diff = numeric())
+
+# 对每对组进行遍历并计算差异
+for (pair in group_pairs) {
+  # 获取组对的组ID
+  groupA <- pair[1]
+  groupB <- pair[2]
+  
+  # 提取两组的相关数据
+  data_groupA <- para_sim_group[para_sim_group$groupID == groupA, c("v_diff")]
+  data_groupB <- para_sim_group[para_sim_group$groupID == groupB, c("v_diff")]
+  
+  # 计算差异
+  v_diff_diff <- data_groupA$v_diff - data_groupB$v_diff
+  
+  # 创建一个临时数据框存储计算结果
+  temp_diff <- data.frame(
+    comparison = paste0(groupA, "-", groupB),
+    v_diff_diff = v_diff_diff
+  )
+  
+  # 将结果追加到 sim_diff 数据框中
+  v_sim_diff <- rbind(v_sim_diff, temp_diff)
+}
+```
+
+#### General
+```{r}
+# 调色板（你可以调整颜色数量和顺序）
+colors <- RColorBrewer::brewer.pal(4, "RdBu")
+
+# 自定义 group 顺序（可选）
+comparison_order <- c("2-1", "3-2", "4-3", "9-8")
+
+# 手动设置标签映射
+label_map <- c(
+  # "2-1" = "W(600-300)",
+  "3-2" = "P(120-0)",
+  "4-3" = "T(80-30), W=600",
+  "9-8" = "T(80-30), W=800"
+)
+
+v_group_diff$comparison <- factor(v_group_diff$comparison, levels = comparison_order)
+v_group_diff_summary$comparison <- factor(v_group_diff_summary$comparison, levels = comparison_order)
+
+# 可视化图形
+v_diff_plot <- ggplot(v_group_diff, aes(x = comparison, y = diff, fill = comparison)) +
+  # 半小提琴图（展示密度）
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.9) +
+  # bootstrap 样本点
+  geom_jitter(aes(color = comparison), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 置信区间
+  geom_crossbar(data = v_group_diff_summary, 
+                aes(x = comparison, y = mean_diff, ymin = lower_ci, ymax = upper_ci),
+                width = 0.15, color = "black", alpha = 0.2, inherit.aes = FALSE) +
+  # 添加 模拟数据组差异 的均值点
+  geom_point(data = v_sim_diff, aes(x = factor(comparison), y = v_diff_diff), 
+             color = "black", shape = 17, size = 4) +  
+  # 颜色设定
+  scale_fill_manual(values = colors) +
+  scale_color_manual(values = colors) +
+  scale_x_discrete(labels = label_map) + 
+  # 标签和主题
+  labs(
+    x = "Group Comparison",
+    y = "vdiff difference"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+        axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+        strip.text   = element_text(size = 20, face = "bold", color = "black"),
+        legend.title = element_text(size = 21, face = "bold", color = "black"),
+        legend.text  = element_text(size = 20, face = "bold", color = "black")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 1) 
+
+# 展示图形
+v_diff_plot
+```
+
+```{r}
+ggsave("bootstrap_vdiff_group.png", 
+       plot = v_diff_plot, 
+       width = 16, 
+       height = 7, 
+       dpi = 300)
+```
+
+#### S3 
+```{r}
+v_group_diff1 <- v_group_diff %>%
+  filter(comparison == "3-2" | comparison == "4-3")
+
+v_group_diff_summary1 <- v_group_diff_summary %>%
+  filter(comparison == "3-2" | comparison == "4-3")
+```
+
+```{r}
+v_sim_diff1 <- v_sim_diff %>%
+  filter(comparison == "3-2" | comparison == "4-3")
+```
+
+```{r}
+# 调色板
+colors <- RColorBrewer::brewer.pal(4, "RdBu")
+
+# 自定义 group 顺序（可选）
+comparison_order <- c("2-1", "3-2", "4-3")
+
+# 手动设置标签映射
+label_map <- c(
+  "2-1" = "W(600-300)",
+  "3-2" = "P(120-0)",
+  "4-3" = "T(80-30), W=600"
+)
+
+v_group_diff1$comparison <- factor(v_group_diff1$comparison, levels = comparison_order)
+v_group_diff_summary1$comparison <- factor(v_group_diff_summary1$comparison, levels = comparison_order)
+
+# 可视化图形
+v_diff_plot1 <- ggplot(v_group_diff1, aes(x = comparison, y = diff, fill = comparison)) +
+  # 半小提琴图（展示密度）
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.6) +
+  # bootstrap 样本点
+  geom_jitter(aes(color = comparison), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 置信区间
+  geom_crossbar(data = v_group_diff_summary1, 
+                aes(x = comparison, y = mean_diff, ymin = lower_ci, ymax = upper_ci),
+                width = 0.15, color = "black", alpha = 0.2, inherit.aes = FALSE) +
+  # 添加 模拟数据组差异 的均值点
+  geom_point(data = v_sim_diff1, aes(x = factor(comparison), y = v_diff_diff), 
+             color = "black", shape = 17, size = 4) +  
+  # 颜色设定
+  scale_fill_manual(values = colors) +
+  scale_color_manual(values = colors) +
+  scale_x_discrete(labels = label_map) + 
+  # 标签和主题
+  labs(
+    x = "Group Comparison",
+    y = "vdiff difference"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+        axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+        strip.text   = element_text(size = 20, face = "bold", color = "black"),
+        legend.title = element_text(size = 21, face = "bold", color = "black"),
+        legend.text  = element_text(size = 20, face = "bold", color = "black")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 1) 
+
+# 展示图形
+v_diff_plot1
+```
+
+```{r}
+ggsave("bootstrap_vdiff_group_s3.png", 
+       plot = v_diff_plot1, 
+       width = 11, 
+       height = 7, 
+       dpi = 300)
+```
+
+#### S4
+```{r}
+v_group_diff2 <- v_group_diff %>%
+  filter(comparison == "4-3" | comparison == "9-8")
+
+v_group_diff_summary2 <- v_group_diff_summary %>%
+  filter(comparison == "4-3" | comparison == "9-8")
+```
+
+```{r}
+v_sim_diff2 <- v_sim_diff %>%
+  filter(comparison == "4-3" | comparison == "9-8")
+```
+
+```{r}
+# 调色板
+colors <- c("#B61D2F", "#2769AF")
+
+# 自定义 group 顺序（可选）
+comparison_order2 <- c("4-3", "9-8")
+
+# 手动设置标签映射
+label_map2 <- c(
+  "4-3" = "T(80-30), W=600",
+  "9-8" = "T(80-30), W=800"
+)
+
+v_group_diff2$comparison <- factor(v_group_diff2$comparison, levels = comparison_order2)
+v_group_diff_summary2$comparison <- factor(v_group_diff_summary2$comparison, levels = comparison_order2)
+
+# 可视化图形
+v_diff_plot2 <- ggplot(v_group_diff2, aes(x = comparison, y = diff, fill = comparison)) +
+  # 半小提琴图（展示密度）
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.9) +
+  # bootstrap 样本点
+  geom_jitter(aes(color = comparison), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 置信区间
+  geom_crossbar(data = v_group_diff_summary2, 
+                aes(x = comparison, y = mean_diff, ymin = lower_ci, ymax = upper_ci),
+                width = 0.15, color = "black", alpha = 0.2, inherit.aes = FALSE) +
+  # 添加 模拟数据组差异 的均值点
+  geom_point(data = v_sim_diff2, aes(x = factor(comparison), y = v_diff_diff), 
+             color = "black", shape = 17, size = 4) +  
+  # 颜色设定
+  scale_fill_manual(values = colors) +
+  scale_color_manual(values = colors) +
+  scale_x_discrete(labels = label_map2) + 
+  # 标签和主题
+  labs(
+    x = "Group Comparison",
+    y = "vdiff difference"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+        axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+        strip.text   = element_text(size = 20, face = "bold", color = "black"),
+        legend.title = element_text(size = 21, face = "bold", color = "black"),
+        legend.text  = element_text(size = 20, face = "bold", color = "black")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 1) 
+
+# 展示图形
+v_diff_plot2
+```
+
+```{r}
+ggsave("bootstrap_vdiff_group_s4.png", 
+       plot = v_diff_plot2, 
+       width = 11, 
+       height = 7, 
+       dpi = 300)
+```
+
+## a
+### Bootstrap(subject level)
+```{r}
+# 定义bootstrap函数，计算均值
+boot_a <- function(data, indices) {
+  d <- data[indices, ]  # 重新抽样数据
+  return(mean(d$a))  # 计算均值
+}
+```
+
+```{r}
+# 对每个组进行 bootstrap
+set.seed(034)
+
+a_res <- lapply(split(para_emp_individual, para_emp_individual$groupID), function(group_data) {
+  boot(data = group_data, statistic = boot_a, R = 2000)  # R 代表重复抽样次数
+})
+
+# a_res
+```
+
+```{r}
+# 转换 bootstrap 结果为 data.frame 以便 ggplot2 可用
+a_res_df <- do.call(rbind, lapply(names(a_res), function(group) {
+  ci <- boot.ci(a_res[[group]], type = "bca")$bca[4:5]
+  data.frame(groupID = group, boot_means = a_res[[group]]$t, lower_ci = ci[1], upper_ci = ci[2])
+}))
+```
+
+```{r}
+# 按分组计算均值和 95% 置信区间
+a_res_sum <- a_res_df %>%
+  group_by(groupID) %>%
+  summarise(
+    mean_val = mean(boot_means),
+    lower_ci = mean(lower_ci), 
+    upper_ci = mean(upper_ci)
+  )
+```
+
+#### General
+```{r}
+# 确保 groupID 是因子类型，并按照你的顺序排列
+a_res_df$groupID <- factor(a_res_df$groupID, levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+a_res_sum$groupID <- factor(a_res_sum$groupID, levels = c(1, 2, 3, 4, 8, 9, 5, 6))
+```
+
+```{r}
+colors <- RColorBrewer::brewer.pal(8, "RdBu")
+
+a_bootstrap <- ggplot(a_res_df, aes(x = factor(groupID), y = boot_means, fill = factor(groupID))) +
+  # 半小提琴图
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.9) +
+  # 透明 bootstrap 散点（叠加在 95% CI 上）
+  geom_jitter(aes(color = factor(groupID)), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 用 crossbar 画 95% CI
+  geom_crossbar(data = a_res_sum, aes(x = factor(groupID), y = mean_val, ymin = lower_ci, ymax = upper_ci), 
+                width = 0.15, color = "black", alpha = 0.2) + 
+  # 添加 sim_data 的均值点
+  geom_point(data = para_sim_group, aes(x = factor(groupID), y = a), 
+             color = "black", shape = 17, size = 4) +  
+  # 设置调色板
+  scale_fill_manual(values = colors) + 
+  scale_color_manual(values = colors) + 
+  # 更改 x 轴标签
+  scale_x_discrete(labels = Condition_order) + 
+  # 主题设置
+  labs(
+    x = "Condition",
+    y = "Bootstrap Means"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none") +  # 隐藏图例
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+
+a_bootstrap
+```
+
+```{r}
+ggsave("bootstrap_az.png", 
+       plot = a_bootstrap, 
+       width = 29, 
+       height = 7, 
+       dpi = 300)
+```
+
+#### T effect 
+```{r}
+a_res_df1 <- a_res_df %>%
+  filter(groupID == c(8, 9))
+a_res_sum1 <- a_res_sum %>%
+  filter(groupID == c(8, 9))
+sim_a_group1 <- para_sim_group %>%
+  filter(groupID == c(8, 9))
+```
+
+```{r}
+colors <- c("#B61D2F", "#2769AF")
+
+a_bootstrap1 <- ggplot(a_res_df1, aes(x = factor(groupID), y = boot_means, fill = factor(groupID))) +
+  # 半小提琴图
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.9) +
+  # 透明 bootstrap 散点（叠加在 95% CI 上）
+  geom_jitter(aes(color = factor(groupID)), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 用 crossbar 画 95% CI
+  geom_crossbar(data = a_res_sum1, aes(x = factor(groupID), y = mean_val, ymin = lower_ci, ymax = upper_ci), 
+                width = 0.15, color = "black", alpha = 0.2) + 
+  # 添加 sim_data 的均值点
+  geom_point(data = sim_a_group1, aes(x = factor(groupID), y = a), 
+             color = "black", shape = 17, size = 4) +  
+  # 设置调色板
+  scale_fill_manual(values = colors) + 
+  scale_color_manual(values = colors) + 
+  # 更改 x 轴标签
+  scale_x_discrete(labels = group_labels) + 
+  # 主题设置
+  labs(
+    x = "Condition",
+    y = "Bootstrap Means"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none") +  # 隐藏图例
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+
+a_bootstrap1
+```
+
+```{r}
+ggsave("bootstrap_a_g8g9.png", 
+       plot = a_bootstrap1, 
+       width = 7, 
+       height = 5, 
+       dpi = 300)
+```
+
+```{r}
+a_res_df2 <- a_res_df %>%
+  filter(groupID == c(3,4))
+a_res_sum2 <- a_res_sum %>%
+  filter(groupID == c(3,4))
+sim_a_group2 <- para_sim_group %>%
+  filter(groupID == c(3,4))
+```
+
+```{r}
+colors <- c("#B61D2F", "#2769AF")
+
+a_bootstrap2 <- ggplot(a_res_df2, aes(x = factor(groupID), y = boot_means, fill = factor(groupID))) +
+  # 半小提琴图
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.9) +
+  # 透明 bootstrap 散点（叠加在 95% CI 上）
+  geom_jitter(aes(color = factor(groupID)), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 用 crossbar 画 95% CI
+  geom_crossbar(data = a_res_sum2, aes(x = factor(groupID), y = mean_val, ymin = lower_ci, ymax = upper_ci), 
+                width = 0.15, color = "black", alpha = 0.2) + 
+  # 添加 sim_data 的均值点
+  geom_point(data = sim_a_group2, aes(x = factor(groupID), y = a), 
+             color = "black", shape = 17, size = 4) +  
+  # 设置调色板
+  scale_fill_manual(values = colors) + 
+  scale_color_manual(values = colors) + 
+  # 更改 x 轴标签
+  scale_x_discrete(labels = group_labels) + 
+  # 主题设置
+  labs(
+    x = "Condition",
+    y = "Bootstrap Means"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none") +  # 隐藏图例
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+
+a_bootstrap2
+```
+
+```{r}
+ggsave("bootstrap_a_g3g4.png", 
+       plot = a_bootstrap2, 
+       width = 7, 
+       height = 5, 
+       dpi = 300)
+```
+
+```{r}
+a_res_df3 <- a_res_df %>%
+  filter(groupID == 3 | groupID == 4 | groupID == 8 | groupID == 9)
+a_res_sum3 <- a_res_sum %>%
+  filter(groupID == 3 | groupID == 4 | groupID == 8 | groupID == 9)
+sim_a_group3 <- para_sim_group %>%
+  filter(groupID == 3 | groupID == 4 | groupID == 8 | groupID == 9)
+```
+
+```{r}
+colors <- RColorBrewer::brewer.pal(4, "RdBu")
+
+a_bootstrap3 <- ggplot(a_res_df3, aes(x = factor(groupID), y = boot_means, fill = factor(groupID))) +
+  # 半小提琴图
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.9) +
+  # 透明 bootstrap 散点（叠加在 95% CI 上）
+  geom_jitter(aes(color = factor(groupID)), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 用 crossbar 画 95% CI
+  geom_crossbar(data = a_res_sum3, aes(x = factor(groupID), y = mean_val, ymin = lower_ci, ymax = upper_ci), 
+                width = 0.15, color = "black", alpha = 0.2) + 
+  # 添加 sim_data 的均值点
+  geom_point(data = sim_a_group3, aes(x = factor(groupID), y = a), 
+             color = "black", shape = 17, size = 4) +  
+  # 设置调色板
+  scale_fill_manual(values = colors) + 
+  scale_color_manual(values = colors) + 
+  # 更改 x 轴标签
+  scale_x_discrete(labels = group_labels) + 
+  # 主题设置
+  labs(
+    x = "Condition",
+    y = "Bootstrap Means"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none") +  # 隐藏图例
+  theme(
+    axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+    axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+    strip.text   = element_text(size = 20, face = "bold", color = "black"),
+    legend.title = element_text(size = 21, face = "bold", color = "black"),
+    legend.text  = element_text(size = 20, face = "bold", color = "black")
+  )
+  
+a_bootstrap3
+```
+
+```{r}
+ggsave("bootstrap_a.png", 
+       plot = a_bootstrap3, 
+       width = 16, 
+       height = 7, 
+       dpi = 300)
+```
+
+### Bootstrap(condition level)
+```{r}
+# 定义我们要比较的 group 对
+group_pairs <- list(
+  c(2, 1), # 提升反应窗口(a)
+  c(3, 2), # 提升练习试次数量(vdiff)
+  c(4, 3), # 提升刺激呈现时间(a, vdiff)
+  c(9, 8)  # 提升刺激呈现时间(a, vdiff)
+)
+```
+
+```{r}
+# Bootstrap 差值函数（单对 group）
+boot_group_diff <- function(data_A, data_B, R = 5000) {
+  n_A <- nrow(data_A)
+  n_B <- nrow(data_B)
+  
+  replicate(R, {
+    a_A <- mean(sample(data_A$a, n_A, replace = TRUE))
+    a_B <- mean(sample(data_B$a, n_B, replace = TRUE))
+    a_A - a_B
+  })
+}
+```
+
+```{r}
+# 储存结果
+a_boot_results <- list()
+
+# 对每一对进行 bootstrap
+set.seed(34)
+for (pair in group_pairs) {
+  gA <- pair[1]
+  gB <- pair[2]
+  
+  data_A <- para_emp_individual %>% filter(groupID == gA)
+  data_B <- para_emp_individual %>% filter(groupID == gB)
+  
+  diffs <- boot_group_diff(data_A, data_B, R = 2000)
+  
+  a_boot_results[[paste0(gA, "-", gB)]] <- data.frame(
+    groupA = gA,
+    groupB = gB,
+    diff = diffs
+  )
+}
+```
+
+```{r}
+# 合并为一个大表
+a_group_diff <- bind_rows(a_boot_results, .id = "comparison")
+
+# 计算均值和 95% CI
+a_group_diff_summary <- a_group_diff %>%
+  group_by(comparison) %>%
+  summarise(
+    mean_diff = mean(diff),
+    lower_ci = quantile(diff, 0.025),
+    upper_ci = quantile(diff, 0.975)
+  )
+print(a_group_diff_summary)
+```
+
+#### a sim group diff
+```{r}
+# 创建一个新的数据框来存储每一组差异
+a_sim_diff <- data.frame(pair = character(), a_diff = numeric())
+
+# 对每对组进行遍历并计算差异
+for (pair in group_pairs) {
+  # 获取组对的组ID
+  groupA <- pair[1]
+  groupB <- pair[2]
+  
+  # 提取两组的相关数据
+  data_groupA <- para_sim_group[para_sim_group$groupID == groupA, c("a")]
+  data_groupB <- para_sim_group[para_sim_group$groupID == groupB, c("a")]
+  
+  # 计算差异
+  a_diff <- data_groupA$a - data_groupB$a
+  
+  # 创建一个临时数据框存储计算结果
+  temp_diff <- data.frame(
+    comparison = paste0(groupA, "-", groupB),
+    a_diff = a_diff
+  )
+  
+  # 将结果追加到 sim_diff 数据框中
+  a_sim_diff <- rbind(a_sim_diff, temp_diff)
+}
+```
+
+#### General
+```{r}
+# 调色板
+colors <- RColorBrewer::brewer.pal(4, "RdBu")
+
+# 自定义 group 顺序（可选）
+comparison_order <- c("2-1", "3-2", "4-3", "9-8")
+
+# 手动设置标签映射
+label_map <- c(
+  "2-1" = "W(600-300)",
+  "3-2" = "P(120-0)",
+  "4-3" = "T(80-30), W=600",
+  "9-8" = "T(80-30), W=800"
+)
+
+a_group_diff$comparison <- factor(a_group_diff$comparison, levels = comparison_order)
+a_group_diff_summary$comparison <- factor(a_group_diff_summary$comparison, levels = comparison_order)
+
+# 可视化图形
+a_diff_plot <- ggplot(a_group_diff, aes(x = comparison, y = diff, fill = comparison)) +
+  # 半小提琴图（展示密度）
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.6) +
+  # bootstrap 样本点
+  geom_jitter(aes(color = comparison), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 置信区间
+  geom_crossbar(data = a_group_diff_summary, 
+                aes(x = comparison, y = mean_diff, ymin = lower_ci, ymax = upper_ci),
+                width = 0.15, color = "black", alpha = 0.2, inherit.aes = FALSE) +
+  # 添加 模拟数据组差异 的均值点
+  geom_point(data = a_sim_diff, aes(x = factor(comparison), y = a_diff), 
+             color = "black", shape = 17, size = 4) +  
+  # 颜色设定
+  scale_fill_manual(values = colors) +
+  scale_color_manual(values = colors) +
+  scale_x_discrete(labels = label_map) + 
+  # 标签和主题
+  labs(
+    x = "Group Comparison",
+    y = "a difference"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+        axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+        strip.text   = element_text(size = 20, face = "bold", color = "black"),
+        legend.title = element_text(size = 21, face = "bold", color = "black"),
+        legend.text  = element_text(size = 20, face = "bold", color = "black")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 1) 
+
+# 展示图形
+a_diff_plot
+```
+
+```{r}
+ggsave("bootstrap_adiff_group.png", 
+       plot = a_diff_plot, 
+       width = 16, 
+       height = 7, 
+       dpi = 300)
+```
+
+#### S3 
+```{r}
+a_group_diff1 <- a_group_diff %>%
+  filter(comparison == "2-1" |comparison == "3-2" | comparison == "4-3")
+
+a_group_diff_summary1 <- a_group_diff_summary %>%
+  filter(comparison == "2-1" |comparison == "3-2" | comparison == "4-3")
+```
+
+```{r}
+a_sim_diff1 <- a_sim_diff %>%
+  filter(comparison == "2-1" |comparison == "3-2" | comparison == "4-3")
+```
+
+```{r}
+# 调色板
+colors <- RColorBrewer::brewer.pal(4, "RdBu")
+
+# 自定义 group 顺序
+comparison_order1 <- c("2-1", "3-2", "4-3")
+
+# 手动设置标签映射
+label_map1 <- c(
+  "2-1" = "W(600-300)",
+  "3-2" = "P(120-0)",
+  "4-3" = "T(80-30), W=600"
+)
+
+a_group_diff1$comparison <- factor(a_group_diff1$comparison, levels = comparison_order)
+a_group_diff_summary1$comparison <- factor(a_group_diff_summary1$comparison, levels = comparison_order)
+
+# 可视化图形
+a_diff_plot1 <- ggplot(a_group_diff1, aes(x = comparison, y = diff, fill = comparison)) +
+  # 半小提琴图（展示密度）
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.6) +
+  # bootstrap 样本点
+  geom_jitter(aes(color = comparison), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 置信区间
+  geom_crossbar(data = a_group_diff_summary1, 
+                aes(x = comparison, y = mean_diff, ymin = lower_ci, ymax = upper_ci),
+                width = 0.15, color = "black", alpha = 0.2, inherit.aes = FALSE) +
+  # 添加 模拟数据组差异 的均值点
+  geom_point(data = a_sim_diff1, aes(x = factor(comparison), y = a_diff), 
+             color = "black", shape = 17, size = 4) + 
+  # 颜色设定
+  scale_fill_manual(values = colors) +
+  scale_color_manual(values = colors) +
+  scale_x_discrete(labels = label_map) + 
+  # 标签和主题
+  labs(
+    x = "Group Comparison",
+    y = "a difference"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+        axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+        strip.text   = element_text(size = 20, face = "bold", color = "black"),
+        legend.title = element_text(size = 21, face = "bold", color = "black"),
+        legend.text  = element_text(size = 20, face = "bold", color = "black")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 1) 
+
+# 展示图形
+a_diff_plot1
+```
+
+```{r}
+ggsave("bootstrap_adiff_group_s3.png", 
+       plot = a_diff_plot1, 
+       width = 16, 
+       height = 7, 
+       dpi = 300)
+```
+
+#### S4
+```{r}
+a_group_diff2 <- a_group_diff %>%
+  filter(comparison == "4-3" | comparison == "9-8")
+
+a_group_diff_summary2 <- a_group_diff_summary %>%
+  filter(comparison == "4-3" | comparison == "9-8")
+```
+
+```{r}
+a_sim_diff2 <- a_sim_diff %>%
+  filter(comparison == "4-3" | comparison == "9-8")
+```
+
+```{r}
+# 调色板
+colors <- c("#B61D2F", "#2769AF")
+
+# 自定义 group 顺序（可选）
+comparison_order2 <- c("4-3", "9-8")
+
+# 手动设置标签映射
+label_map2 <- c(
+  "4-3" = "T(80-30), W=600",
+  "9-8" = "T(80-30), W=800"
+)
+
+a_group_diff2$comparison <- factor(a_group_diff2$comparison, levels = comparison_order)
+a_group_diff_summary2$comparison <- factor(a_group_diff_summary2$comparison, levels = comparison_order)
+
+# 可视化图形
+a_diff_plot2 <- ggplot(a_group_diff2, aes(x = comparison, y = diff, fill = comparison)) +
+  # 半小提琴图（展示密度）
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.6) +
+  # bootstrap 样本点
+  geom_jitter(aes(color = comparison), width = 0.1, alpha = 0.1, size = 1.5) +
+  # 置信区间
+  geom_crossbar(data = a_group_diff_summary2, 
+                aes(x = comparison, y = mean_diff, ymin = lower_ci, ymax = upper_ci),
+                width = 0.15, color = "black", alpha = 0.2, inherit.aes = FALSE) +
+  # 添加 模拟数据组差异 的均值点
+  geom_point(data = a_sim_diff2, aes(x = factor(comparison), y = a_diff), 
+             color = "black", shape = 17, size = 4) + 
+  # 颜色设定
+  scale_fill_manual(values = colors) +
+  scale_color_manual(values = colors) +
+  scale_x_discrete(labels = label_map) + 
+  # 标签和主题
+  labs(
+    x = "Group Comparison",
+    y = "a difference"
+  ) +
+  papaja::theme_apa() +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+        axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.x  = element_text(size = 20, face = "bold", color = "black"),
+        axis.text.y  = element_text(size = 21, face = "bold", color = "black"),
+        strip.text   = element_text(size = 20, face = "bold", color = "black"),
+        legend.title = element_text(size = 21, face = "bold", color = "black"),
+        legend.text  = element_text(size = 20, face = "bold", color = "black")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 1) 
+
+# 展示图形
+a_diff_plot2
+```
+
+```{r}
+ggsave("bootstrap_adiff_group_s4.png", 
+       plot = a_diff_plot2, 
+       width = 16, 
+       height = 7, 
+       dpi = 300)
+```
