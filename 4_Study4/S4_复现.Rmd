@@ -53,7 +53,7 @@ convert_data_type_emp <- function(df) {
 ```{r}
 # 将所有需要读取的数据文件名字保存到名为files的list
 file_emp <- list.files(
-  here::here("Study 4", "data", "emp_data"), 
+  here::here("Study4", "data", "emp_data"), 
   pattern = "EXP.*\\.csv$", 
   full.names = TRUE)
 ```
@@ -122,12 +122,12 @@ paradata <- df_emp_match %>%
 # 导出合并好的数据
 bruceR::export(
   paradata, 
-  file = here::here("Study 4", "data", "para_data.csv"))
+  file = here::here("Study4", "data", "para_data.csv"))
 ```
 
 ```{r}
 # 确保文件路径正确
-file_path <- here::here("Study 4", "data", "fast dm", "estimates_0424.txt")  
+file_path <- here::here("Study4", "data", "fast dm", "estimates_0424.txt")  
 
 # 读取文件
 para_emp <- read.table(file_path, header = TRUE, sep = ";", stringsAsFactors = FALSE) %>%
@@ -253,7 +253,7 @@ convert_data_type_sim <- function(df) {
 ```{r}
 # 将所有需要读取的数据文件名字保存到名为files的list
 file_sim <- list.files(
-  here::here("Study 4", "data", "sim_data", "final", "250430"), 
+  here::here("Study4", "data", "sim_data", "final", "250430"), 
   pattern = "d*\\.csv$", 
   full.names = TRUE)
 ```
