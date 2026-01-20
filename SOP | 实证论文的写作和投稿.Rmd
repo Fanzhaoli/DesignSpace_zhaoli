@@ -1,0 +1,621 @@
+---
+title: "Untitled"
+author: "FanZhaoli"
+date: "2026-01-20"
+output: html_document
+---
+
+**SOP | 实证论文的写作和投稿**
+
+**README**
+```{r}
+本项目提供关于文章写作、投稿到发表的全程指导。分为指导步骤、指导说明、模板等信息。本指导流程不适用 Registered Report。
+
+项目维护成员：晚坷，振辛，刘铮
+
+Github Repo: https://github.com/Chuan-Peng-Lab/Writing_and_Publish_Template.git
+
+本项目针对传统稿件
+
+以后会基于该工作流更新关于注册报告(包括预注册)的写作指导。
+```
+
+
+
+**整体工作流**
+
+**前期：论文撰写阶段**
+```{r}
+第一步：按照[文件夹管理示例](https://chuanpenglab.feishu.cn/docx/LqpUdUiTHoCFaSxNnivcYVEhnLg#CmIwdVmicoKxRGxFcNccUlcVnEg)创建项目文件夹。
+
+第二步：撰写文章大纲。 -- 预计花费 1~2周
+
+确认研究主题和研究问题，以及基本的研究方法。
+
+撰写大纲并通过邮件和导师确认大纲，邮件模板请参考[邮件--项目更新模板](https://chuanpenglab.feishu.cn/docx/T8NYdzYJBoj7vKxhtWIcxTLanoe)；(可选)写日志和更新todo list。
+
+第三步：撰写方法和结果。 -- 预计花费 1~3 个月
+
+注意寻找参考文献，从而获得方法和结果写作的参考样例。
+
+完成撰写后，写邮件和导师进行确认；写日志和更新todo list。
+
+第四步：完成引言和讨论 -- 预计花费 1~2 个月
+
+请参照 [**大语言模型润色说明**](https://chuanpenglab.feishu.cn/docx/XuV6dkk6woLgrPx8s1Kcvvf9nAs#share-CFHmd0yd0oqsdQxJHr5cjlYEnZb) 对初稿进行润色。
+
+写邮件和导师进行确认。反复优化稿件。
+
+注意在与传鹏交流过程中会存在对稿件的多次迭代，在此期间需要对稿件进行备份和版本管理。团队使用 git 进行资料的版本管理。请自行根据 [方法技术分享 (Tech-Sharing)](https://chuanpenglab.feishu.cn/base/R0jkb8QEhazR9psFiVTcZ5FcnFc?from=from_copylink) 学习如何使用GitHub进行版本管理。对于与传鹏邮件交流过程中产生的多次迭代的稿件命名，请按照[命名规范](https://chuanpenglab.feishu.cn/docx/LqpUdUiTHoCFaSxNnivcYVEhnLg#Lvngd0CEnoDRDFxZQFLcWosknWb)填写。
+
+论文写作自检清单
+
+建议课题组同学在论文撰写过程中以及投稿前，通过这份清单系统性地排查实证研究论文中常见的写作问题，最大程度地提升稿件的综合质量以及降低后续修改花费的时间成本。具体请见[论文写作自检清单](https://chuanpenglab.feishu.cn/docx/V51Zdety5ooDCixhQ8bcRas7nib)。
+```
+
+
+**中期：投稿阶段**
+```{r}
+第五步：准备投稿 -- 预计花费一周
+
+首先，收集投稿期刊所需的格式，将重点要求记录在 logs 文件夹中。
+
+其次，修改文章排版和格式，使得符合(例如 apa)的格式，特别是检查参考文献。
+
+过程中，可以根据引文文献，考虑推荐审稿人。注意这一点是需要与传鹏进行讨论的。
+
+再次，准备 cover letter。请参考：[**cover letter 模板**](https://chuanpenglab.feishu.cn/docx/XuV6dkk6woLgrPx8s1Kcvvf9nAs#share-XSMldInVzo6cvTxLhVEci80hnHy)
+
+最后，注册账号，填写信息表格。
+
+每一步完成后可写日志和更新 to do list。
+
+第六步：根据审稿意见进行修改 -- 预计花费 1~3月
+
+如果是被拒了，请根据意见进行修改，如果换期刊，还需要根据新期刊要求的格式和文风（建议找几篇该期刊的sample）进行修改。
+
+如果没有被拒，请参考 [**审稿意见回复模板**](https://chuanpenglab.feishu.cn/docx/XuV6dkk6woLgrPx8s1Kcvvf9nAs#share-UQ9sd3NRVoHcG6xonPccOAPinWh) 进行审稿意见回复。
+
+第六步可能重复多次。
+
+注意，审稿意见也需要按照 [**版本管理**](https://chuanpenglab.feishu.cn/docx/XuV6dkk6woLgrPx8s1Kcvvf9nAs#share-DtlvdqtdPo02a2xWXdUchBYjn2f) 对稿件进行备份和管理。
+```
+
+
+
+**后期：论文发表阶段**
+
+第七步：发表 -- 预计花费 1个月
+
+保存重要材料。接收证明，出版证明。
+
+准备上传材料。correction_proof，figs，osf 数据备份。
+
+**文件夹管理**
+
+文件夹模板已经放在github，同时在 [Lab文件夹管理模板](https://chuanpenglab.feishu.cn/docx/LqpUdUiTHoCFaSxNnivcYVEhnLg#CmIwdVmicoKxRGxFcNccUlcVnEg)的 zip 中也有。
+
+Plain Text  
+\# 文件夹管理  
+0_logs # 用于记录 todo list， 邮件备份，以及一些备注  
+\# 用于记录在官网摘录的关键写作要求，比如是 apa6 还是 apa7；图片放文中还是文尾  
+写作要求.(md|docx)  
+\# 用于记录每个阶段完成了哪些工作，以及 todo list。例如，最近完成了方法和结果写作，后面完成  
+日志.(md|docx)  
+\# 用于记录邮件。同时记录项目进度，作为日志的补充。  
+邮件备份.(md|docx)  
+1_manuscript # 为了更好的版本管理注意命名规则  
+manuscript_template.docx  
+dockerHDDM_manuscript_v1.1.(md|docx)  
+dockerHDDM_manuscript_v1.2.(md|docx)  
+dockerHDDM_manuscript_v9.1.(md|docx)  
+dockerHDDM_manuscript_v12.1.(md|docx)  
+2_figs  
+\# 图片最好保存为 pdf 格式。 可以保留对应的 .pptx 或者 .psd 文件。  
+\# 给个 self matching task 的实验流程图作为示例。包括ppt和保存后的pdf。  
+fig1.pptx  
+fig1.(png|pdf)  
+3_submission # 用于存放投稿时所需的材料  
+\# \*\_for_submission 文件需符合投稿格式要求  
+dockerHDDM_manuscript_v1.1_for_submission.(docx|pdf)  
+\# \*\_for_preprint 文件需符合 arxiv 的预印本格式要求  
+dockerHDDM_manuscript_v1.1_for_preprint.(docx|pdf)  
+cover_letter_for_dockerHDDM_manuscript_v1.pdf  
+4_rc_response # 用于保存审稿意见回复的文档  
+response_letter_template.(docx)  
+\# 根据 response_letter_template 生成审稿回复意见文档  
+response_letter_for_dockerHDDM_manuscript.(docx|pdf)  
+\# 注意，提交文档中需要高亮修改部分，而 preprint 中需要去除  
+dockerHDDM_manuscript_v5.1_for_submission.(docx|pdf)  
+dockerHDDM_manuscript_v5.1_for_preprint.(docx|pdf)  
+5_final_round # 准备发表的材料  
+\# 用于存放最后修改的稿件，也需要  
+correction_proof  
+\# 用同样的命名方式进行版本管理  
+AMP1298700_v1.pdf  
+\# 由于提交的 proof 可能需要固定的文件命名，请将最后版本的文件命名为改固定文件名，例如 AMP1298700.pdf  
+AMP1298700.pdf  
+\# figs 文件夹用于存放，按照特定期刊要求修改后具有特殊格式和命名的图片  
+figs  
+\# 示例  
+pan2024_dockerHDDM_fig1.pdf  
+\# 用于备份需要上传到 osf 的数据文件 (如果有 github，也需要上传github库的备份)  
+osf_backup  
+\# 用于存放数据的文件夹  
+data  
+\# 用于存放行为数据分析的代码  
+code_behavior_analysis  
+\# 用于存放计算建模的代码和结果  
+code_modeling  
+
+**邮件交流注意事项**
+
+传鹏常用邮箱：
+
+(default) hcp4715@hotmail.com
+
+hcp4715@gmail.com
+
+hu.chuan-peng@nnu.edu.cn
+
+注意：
+
+邮件名称或主题，即项目的名称即可。
+
+对于同一个项目(文章)，请采取邮件回复的方式进行更新，而不是点击"写邮件"新建主题。
+
+不要修改邮件标题，避免无法追踪相同邮件。
+
+邮件写作可以参考以下模板：
+
+[邮件--项目更新模板](https://chuanpenglab.feishu.cn/docx/T8NYdzYJBoj7vKxhtWIcxTLanoe)
+
+**写作相关指导说明**
+
+前言：每个 LAB 有不同的合作方式，这里的写作流程需要基于我们现在的工作流进行优化。
+
+本 LAB 采取稿件快速迭代的风格模式。
+
+稿件在完成每个单独的部分时需要进行更新和讨论，例如完成大纲时，完成方法和结果时，或者新增重要结果时。
+
+更新频率上建议一周或一周内进行更新一次。
+
+请使用邮件进行项目进度更新，同时在飞书上进行提醒。
+
+写作的参考资料
+
+Henderson, E. L., & Chambers, C. D. (2022). Ten simple rules for writing a registered report. PLoS Computational Biology, 18(10), e1010571. https://doi.org/10.1371/journal.pcbi.1010571
+
+Mensh, B., & Kording, K. (2017). Ten simple rules for structuring papers. PLoS Computational Biology, 13(9), e1005619. https://doi.org/10.1371/journal.pcbi.1005619
+
+[Nature资深编辑关于稿件准备的16条建议](https://mp.weixin.qq.com/s/Oxy5XtuqHqkYZiJUna-mFg)
+
+**稿件模板**
+
+请参考：github 中的 [manuscript_template.docx](https://github.com/Chuan-Peng-Lab/Writing_and_Publish_Template/blob/main/1_manuscript/Template_edition.docx)。完整示例请参考：[SPE_Cross_culture_v1.1.docx](https://github.com/Chuan-Peng-Lab/Writing_and_Publish_Template/blob/main/1_manuscript/SPE_Cross_culture_v1.1.docx)。
+
+说明：
+
+请先完成大纲部分的基础写作，之后根据大纲再完成方法和结果的写作。
+
+在完成大纲部分的写作后便可以通过邮件和导师确认论文写作思路是否合理。
+
+也可以在大纲、方法和结果写作完成后再统一进行讨论和确认。
+
+检查模板是稿件的还是 实验报告的？
+
+**大纲**
+
+根据研究问题，撰写大纲。（不需要很详细，主要用于整理思路）
+
+先确定标题，再按照项目逻辑梳理**一级标题；**
+
+再根据每一部分确定二级标题，**二级标题**下按照“主旨句概括➕简述分论点”进行梳理，例如：
+
+_1.1 二级标题_
+
+_主旨句1（段落）_
+
+_分论点1：（句子）_
+
+_分论点2:_
+
+_主旨句2_
+
+_分论点1：_
+
+_......_
+
+二级标题下需要重点说明的部分可以列为**三级标题（一般不再细分四级标题）**
+
+大纲部分无需内容过于详实，重点突出写作逻辑。
+
+如果有不同的研究（例如建模与行为实验）或者不止一个研究时，可以在每个研究下分别对**方法、结果、讨论**展开撰写（此时二级标题可随研究内容拟定），并在文章最后加入“**总讨论”。**
+
+**引言（introduction）**：引言部分一般不再分二级标题，可以按以下逻辑进行梳理——研究背景-研究问题-研究意义
+
+研究背景
+
+e.g.:大背景:自我相关信息在知觉加工中会表现出自我优势效应（self-prioritization effect），即个体在处理与自身相关的信息时，相较于与他人相关的信息，表现出更好的加工效果。
+
+e.g.:小背景：xxx领域下也表现出自我优势......
+
+e.g.:研究gap：xxx领域对（你要研究的问题）未曾进行深入研究。
+
+研究问题（为什么要做这个研究，要解决什么样的问题）
+
+e.g.:我们的研究主要旨在探讨族群归属对自我优先效应的影响，以填补这一领域的研究空白，重点关注广泛记录的对内群体的积极偏好和对外群体的消极偏好如何塑造自我相关加工过程。
+
+研究意义
+
+理论意义
+
+实践意义
+
+研究假设（选填）
+
+e.g.:当被试被要求将自己与自己的民族群体而不是与另一个群体联系起来时，自我优先效应会更强，这与之前的研究显示的效价与自我优先效应之间的联系一致。
+
+**方法（Method）**：简要说明实验程序、参与者、材料和分析方法。具体写作方法和规范请参考：[Template02_行为实验方案](https://chuanpenglab.feishu.cn/docx/D0nUdq7dPoIcjzx9S5ecXtphnJd?from=from_copylink)
+
+被试招募（被试量计算）与质量控制
+
+实验程序（实验工具、实验设计、实验流程......）
+
+数据分析方法（根据实验设计，选择不同的分析方法或者模型）
+
+**结果(Result）**：总结关键统计结果并提供视觉化呈现。
+
+参考他人的结果的分析（指标、操纵、可视化风格）
+
+结果支持了什么样的假设
+
+**讨论（Discussion）**：结合假设解释结果及其意义。
+
+**方法和结果**
+
+在完成大纲写作后，可以进行数据收集和分析，然后再正式详细地写方法和结果。
+
+这一部分可以算入论文初稿部分，也是大纲的延伸。（我们组内的习惯是先撰写方法和结果部分）
+
+**方法**：详细说明实验程序、被试量计算、数据分析方法。
+
+实验程序（采用了什么范式，使用什么软件（及其版本）进行实验程序的编写，指导语是什么，练习试次多少，正式试次多少，有多少个Block，刺激呈现时间、反应窗口时长、使用何种设备、屏幕刷新率、屏幕分辨率等，尽可能越详细越好；别忘记要引用范式提出的文章）
+
+e.g.:实验采用内隐联想测验（Implicit Association Test, IAT）检测被试是否无意识地将自己与特定种族群体联系起来。使用知觉匹配范式（Sui et al., 2012）测量被试的自我优势效应，实验包含20次练习试次和360次正式试次，刺激呈现时间为500ms，反应窗口为1500ms。
+
+被试量计算（使用贝叶斯序列因子、功效分析等方法计算需要多少被试合适）
+
+e.g.:根据贝叶斯序列因子分析（Bayesian Sequential Analysis），结合先验分布和效应量（如 Cohen's d = 0.5），计算得出初始建议样本量为 N = 20。实验过程中将逐步评估累积证据，并在贝叶斯因子（Bayes Factor, BF10）达到目标阈值（如 BF10 > 10 或 BF10 < 1/10）时停止数据收集，以避免不必要的过度采样或效能不足。
+
+使用什么样的数据分析方法（根据实验设计，选择不同的分析方法或者模型）
+
+数据分析指标：根据实验设计选择合适的统计分析方法（如重复测量方差分析或混合效应模型）。数据分析的主要指标包括反应时（RT）、正确率（ACC）等，并结合效应量（如偏η方，partial eta quared）和贝叶斯因子（Bayes Factor）解释实验结果。
+
+e.g.:本研究采用反应时（RT）和正确率（ACC）作为主要分析指标，结合经典概率论和贝叶斯统计框架进行数据分析。我们利用重复测量方差分析和贝叶斯因子，比较了在不同条件下（2×2×2设计：身份（Self vs. Other）、条件（日本 vs. 意大利）和匹配类型（Matching vs. Nonmatching））的反应时和正确率的差异。
+
+**结果**：总结关键统计结果并提供视觉化呈现。可以参考其他类似文献是如何进行的，可以从三个角度出发进行结果部分的撰写（指标、操纵、可视化风格）。
+
+参考他人的结果的分析（指标、操纵、可视化风格）
+
+结果支持了什么样的假设
+
+提供关键统计结果（如均值、标准差、效应量）。
+
+详细说明显著性检验结果（包括t值、F值或p值）。
+
+**贝叶斯方法**：[贝叶斯分层模型的方法与结果汇报模版](https://chuanpenglab.feishu.cn/wiki/R4HEwJ3MLiM1nEkbHIkcUQBsnrd)
+
+**引言和讨论**
+
+确定结果后，得到结论。根据结论写前言和讨论。
+
+引言思路（每一段话，如何串起来）
+
+**Tips1: 找参考文献**
+
+寻找论文中不错的图，用于指导方法和结果的写作
+
+寻找故事的参考用于写作引言和理论
+
+**Tips2: 大语言模型润色说明**
+
+建议使用 GPT-4o，GLM4，通意千问，海螺AI等进行文章润色。
+
+主要功能，
+
+给定英文段落，对英文段落进行润色。
+
+给定中文描述，让 gpt 生成英文段落。
+
+以下是 prompt：
+
+Markdown  
+**Context (背景)：**  
+你是一名英语编辑，专门负责润色学术期刊文章，特别是遵循APA格式的文献。你的任务是帮助提高文章的语言质量，确保语法正确，表达清晰，逻辑通顺。此外，你还需要帮助用户进行写作和翻译，确保表达前后一致、逻辑连贯。  
+**Objective (目标)：**  
+对给定的英文段落进行润色，发现并修正语法错误、表达不清晰的地方。  
+根据给定的中文或英文指导，帮助用户进行学术写作或翻译，确保内容前后一致、逻辑严密。  
+**Structure (结构)：**  
+**第一部分**：给定英文段落，检查语法错误、拼写错误、句子结构不当以及表达不清晰的地方。逐一列出错误并提供修改建议。  
+**第二部分**：根据给定的中文或英文指导，进行写作或翻译，确保表达的清晰、逻辑性强，并符合APA格式的要求。  
+**Task (任务)：**  
+请执行以下任务：  
+对给定的英文段落进行全面的语言润色，找出并修正语法错误、不清晰的表达和不通顺的句子结构。明确指出每一个修改，并提供理由。  
+根据给定的写作指导或翻译内容，调整文章的逻辑结构，使表达更具连贯性、准确性和流畅性。  
+**Action (行动)：**  
+请逐一列出段落中的语法错误，并提出清晰的修改建议。  
+对于写作或翻译任务，关注上下文的逻辑衔接，确保表达简洁明确，符合学术论文标准。  
+**Result (结果)：**  
+给定段落应被修改为语法正确、结构清晰、表达流畅的学术语言。  
+写作或翻译任务的结果应逻辑清晰、符合APA格式要求，并准确传达原意。  
+**示例：**  
+**Task Example 1 - Proofreading (English Paragraph):**  
+_Original Paragraph:_  
+"The experiment was not sucessful at all because the variables where not controlled properly which cause inconsistencies in the results leading to inconclusive findings which was very hard to interpret."  
+_What You Need to Do:_  
+Identify grammatical issues (spelling, punctuation, tense, etc.)  
+Point out unclear or awkward phrasing  
+Provide a corrected version of the paragraph in proper APA style.  
+_Corrected Version:_  
+"The experiment was unsuccessful because the variables were not controlled properly, which caused inconsistencies in the results and led to inconclusive findings that were difficult to interpret."  
+**Task Example 2 - Writing or Translation Guidance (English or Chinese Instruction):**  
+_Given Instruction (in Chinese):_  
+“请根据以下内容，翻译成英文，并确保翻译后表达逻辑清晰且符合学术规范：在这项研究中，我们使用了定量分析方法，旨在探讨X因素对Y结果的影响。”  
+_What You Need to Do:_  
+Provide an accurate translation  
+Ensure logical clarity and academic tone  
+Follow APA style conventions.  
+_Translated Version:_  
+"In this study, we employed a quantitative analysis method to explore the impact of Factor X on the outcome Y."  
+**Task Example 3 - Writing (English Instruction):**  
+_Given Instruction (in English):_  
+"Write a concise summary of the results section, ensuring it highlights the key findings clearly."  
+_What You Need to Do:_  
+Summarize the content logically  
+Keep the tone academic and concise  
+Maintain clarity while following APA conventions.  
+_Summary Version:_  
+"The results revealed a significant relationship between Factor X and Outcome Y, with a p-value of 0.05, indicating that Factor X may influence Outcome Y under controlled conditions."
+
+**投稿相关指导说明**
+
+选择期刊的技巧
+
+世俗而言，一般从高影响力的期刊开始投，起点不要太低
+
+每个分区至少2个候选期刊，分区内按照关联程度排序投稿
+
+可以根据领域来单独确定期刊排序。例如，心理学方法类期刊；实验心理学期刊；社会心理学期刊；神经科学期刊等。
+
+提前查看目标期刊的要求：如是否接受某个类型的文章（如有些期刊偏向系统性综述，有的注重实验，有的偏向Meta）
+
+抽样阅读目标期刊近期一年的sample文章，评估工作量是否足够到达该期刊的平均水平，低于平均大概率是不会投稿成功的，但高于也不一定（背后因素太多）
+
+投稿前的准备材料
+
+稿件润色：建议搜索目标期刊近3年发表的类似topic的文章（如有），进行一些模仿学习（如查看这些范文是如何进行标注化报告的）
+
+**建议投稿前打印下来通读，并且寻找其他小伙伴帮助校对，不要有错别字，注意检查APA格式（如：**[**https://www.revistacomunicar.com/pdf/documentos/2020-apa7-comunicar-cn.pdf**](https://www.revistacomunicar.com/pdf/documentos/2020-apa7-comunicar-cn.pdf) **），统计符号**
+
+提前查看期刊的要求：**文稿字数限制**，**图片表格数量限制**，**reference数量限制**，open science statement标准化报告要求，图片表格摆放位置，是否为OA期刊（价格高）
+
+查看期刊（通常是某个出版商的）的网站并注册账号（也可以使用传鹏的已有账号进行投稿）；
+
+**Cover letter**
+
+推荐审稿人。
+
+可以根据引用文献中常被引用的作者中进行推荐（小建议：一般不要选年纪比较大，快退休/已退休仅挂名的通讯作者）。
+
+填写系统
+
+~~定期查看更新~~
+
+如果长期没有回应，请邮件联系编辑。
+
+请注意国外假期，例如圣诞节到跨年，此时编辑部一般不工作。
+
+**Tips1：即使还没准备好投稿，可以先登陆系统进行模拟投稿，了解关键步骤和需要的相关材料的格式要求。**
+
+给个ampps 的截图
+
+**cover letter 模板**
+
+模板说明：
+
+**Introduction**: 在开头简短介绍您提交的文章，并说明文章之前是否有过提交记录以及接受的投稿形式（例如：常规论文或教程文章）。
+
+**Problem and Solution**: 描述您的研究所解决的问题以及您的贡献，尤其要强调它如何填补现有文献中的空白或解决特定的研究挑战。
+
+**Improvements and Updates**: 说明您如何根据评审或反馈改进了工作，并列出已取得的成就或进展。
+
+**Possible Reviewers**: 提供您认为适合审稿的专家名单(4-5名，包括联系方式)，并简要说明每位专家的相关领域和专业背景。
+
+**Closing**: 表达感谢并提供您的联系信息。
+
+此模板可以根据您的具体情况进行调整。
+
+Markdown  
+Subject: Propose for a \[type, e.g., article\] in \[journal name, e.g., AMPPS\]: \[article name\]  
+<br/>Dear Prof. \[Editor’s Last Name\],  
+<br/>I am writing to submit our tutorial article titled "\[Title of Your Manuscript\]" for consideration in _\[Journal Name\]_.  
+\[Introduce the general topic of your manuscript and its significance in the field\]. Drift diffusion models (DDMs) have recently gained significant popularity in fields such as \[list fields\]. In particular, the Python package hddm is currently the most cited software package for implementing Bayesian Hierarchical Drift-Diffusion Models, with over 1w citations according to Google Scholar. However, \[describe the challenge or limitation your work addresses, e.g., difficulties with installation or lack of compatibility with other tools\].  
+<br/>Our work addresses these challenges by \[briefly describe the main contribution of your work, e.g., enhancing software compatibility, simplifying usage for non-experts\]. Specifically, \[highlight the three key innovations or improvements your work introduces, for example\]:  
+\[First innovation\]  
+\[Second innovation\]  
+\[Third innovation\]  
+<br/>We believe that our work will be a valuable resource for both educational purposes and as a tool for advancing research in \[field(s)\].  
+Possible reviewers for this work include:  
+Dr. \[Reviewer Name\], \[email\], \[Institution\]. Expertise: \[brief description of the reviewer’s expertise\].  
+Dr. \[Reviewer Name\], \[email\], \[Institution\]. Expertise: \[brief description of the reviewer’s expertise\].  
+...  
+Thank you for considering our submission.  
+<br/>Sincerely,  
+\[Your Full Name\]  
+\[Co-author(s) Full Name(s) and Contact Information\]  
+Example:  
+Wanke Pan  
+School of Psychology, Nanjing Normal University  
+Email: panwanke2023@gmail.com  
+<br/>Chuan-Peng Hu  
+School of Psychology, Nanjing Normal University  
+Email: hu.chuan-peng@nnu.edu.cn
+
+**Tips2: 中英文期刊投稿注意事项**
+
+自己注册账号即可。
+
+导师确认信。即需要导师给编辑部发邮件说明，导师同意学生向该期刊投稿。
+
+如果是英文期刊，
+
+一般需要用导师账号，因为会默认被认为是通讯作者。
+
+**回复审稿意见相关说明**
+
+小细节不回复可能会被拒稿。
+
+对于编辑和审稿意见的心态调整
+
+[审稿人类型及应对策略](https://chuanpenglab.feishu.cn/docx/BpBjdfpvUoYKV0xyjF2cZrwUnvg)
+
+一些回复的Tips：
+
+礼貌但不要过于啰嗦，使用GPT辅助回复时要特别注意，去掉AI味
+
+分点回复，有的审稿人的意见是一段段话，需要自己分点
+
+所有的审稿人提到的问题，不管大小，都需要回复，小细节不回复会被拒稿
+
+不是所有的审稿人指出的问题都是“对的”，有时候也需要“委婉”坚持自己（需要讨论）。
+
+参考教程：[chuanpenglab.feishu.cn](https://chuanpenglab.feishu.cn/record/S8R4r4aaEeiWWXcq7Q7cMx2hnbf)
+
+张磊老师(知乎)那个翻译。
+
+组内，自己先分析总结，然后讨论，快速迭代(即先处理主要问题，再处理次要的)
+
+必须注意的事项：时间线，注意是否可以申请额外的时间。
+
+**回复审稿意见模板**
+
+Github 库中提供了 .docx 格式的模板
+
+Markdown  
+\[注意：黄色高亮为说明或者示例，后续请自行删除；\[\]中的内容为需要替换的内容，红色为重点强调的内容。\]  
+<br/>Dear \[editor name\],  
+<br/>We appreciate the valuable feedback from the editor and reviewers, which significantly improved our manuscript. We have addressed the concerns raised by you and reviewers with great care. All changes in the manuscript were highlighted in blue. We also responded to editor's and reviewers' comments point-to-point (see below).  
+<br/>To increase the readability of our response letter, we numbered comments and highlighted our replies in blue. For example, R1.1 means the first comment of Reviewer 1. The revised text in the manuscript were copied and pasted in our response letter in smaller font size accordingly to avoid switching between revised manuscript and this response letter. Also, to avoid repetition, we re-use the same response that appeared first by referring the response number. We hope these revisions addressed all concerns raised by reviewers.  
+<br/>Best  
+\[your and correspondents name\]  
+Wanke Pan  
+Ru-Yuan Zhang  
+Hu Chuan-Peng  
+on behalf of all authors  
+<br/><br/><br/>\## Editor comments  
+\### E1. First, these three reviewers will reflect relatively 'advanced' users, yet there are still some stumbling blocks in getting everything to work (and, as a reviewer rightly points out, if an analysis is not finished after, say, 5 hours, many novice users will assume something must be wrong). It is \*essential\* that prior to submitting your revision you invite several non-Docker and non-HDDM users in your environment to see if they can 'figure it out', and attend to any issues they may have.  
+<br/>**Response: We recruited and tested over 32 novice users. Details on user testing are included in response R3.4 below.**  
+<br/>\### E2. Secondly, it is important that the tutorial remains as future proof as can be, so that the different resources are, as much as realistically possible, in one space (such as OSF).  
+<br/>**Response: We carefully address this issue in R3.8 below.**  
+<br/>  
+\## Reviewer: 1  
+\### Comments to the Author  
+Thank you for this fantastic manuscript, which introduces dockerHDDM. The paper is well written and the tutorial is very helpful. I have been using the original Python HDDM package, and wish this paper existed back when I started. This is very clear and offers a nice guide that will aid future researchers. My feedback is relatively minor. I ask for a few points of clarification, and offer some minor copy editing. I believe this project will make an important contribution.  
+Note: I was able to successfully install dockerHDDM on my personal workstation, Ubuntu 22.04.4 LTS.  
+<br/>**Author note: Thanks a lot for your kind words. We are happy that you have successfully installed dockerHDDM in Ubuntu. We hope that dockerHDDM will be the icing on the cake for your use of HDDM!**  
+<br/>\### Main Comments:  
+\#### R1.1. The caption for Figure 1 discusses how sources of trial-by-trial variance are modeled (sv, sz, and st). Some have argued that simpler models ignoring trial-to-trial variability can improve model estimation (https://doi.org/10.3389/fpsyg.2016.01324). What is your take, and is it worthwhile to note this in the manuscript? Or to provide more guidance specific to HDDM?  
+<br/>**Response: Thank you for this suggestion. A recent comprehensive review of EAM (evidence accumulation modelling) by Boag et al. (2024) discussed this issue. They suggested that …. We agree with this view and offer a more detailed discussion of the issue. The revised content is as follows (lines 551-569):**  
+**As a demonstration, ….**  
+**Consequently,….**  
+<br/>\#### R1.2. The caption for Figure 2 includes this text: "In the bottom panel, the green circle represents the model defined based on the specified data; the purple ellipse represents the InferenceData obtained after model fitting; the dotted box shows the pseudo code. After model diagnosis, evaluation and comparison, the optimal model (Model 2 “m2” with “infdata2”) is selected and used for inferential analysis". These colored circles/ellipses are missing from the figure.  
+<br/>**Response: Sorry for the errors. This part was redundant, and we have removed it.**  
+<br/>\## References  
+Boag, R. J., Innes, R., Stevenson, N., Bahg, G., Busemeyer, J. R., Cox, G. E., Donkin, C., Frank, M., Hawkins, G., Heathcote, A., Hedge, C., Lerche, V., Lilburn, S., Logan, G. D., Matzke, D., Miletic, S., Osth, A. F., Palmeri, T., Sederberg, P. B., … Forstmann, B. (2024). _An expert guide to planning experimental tasks for evidence accumulation modelling_. OSF. https://doi.org/10.31234/osf.io/snqgp  
+Boehm, U., Annis, J., Frank, M. J., Hawkins, G. E., Heathcote, A., Kellen, D., Krypotos, A. M., Lerche, V., Logan, G. D., Palmeri, T. J., van Ravenzwaaij, D., Servant, M., Singmann, H., Starns, J. J., Voss, A., Wiecki, T. V., Matzke, D., & Wagenmakers, E. J. (2018). Estimating across-trial variability parameters of the Diffusion Decision Model: Expert advice and recommendations. _Journal of Mathematical Psychology_, _87_, 46–75. https://doi.org/10.1016/j.jmp.2018.09.004  
+Busemeyer, J. R., & Diederich, A. (2010). Cognitive modeling. Sage.
+
+**发表相关指导说明**
+
+**保存重要材料**
+
+**接收证明与出版证明**：请将期刊或编辑部提供的接收证明、出版证明等文件进行妥善保存。这些材料在后续的记录和可能的审计过程中非常重要。
+
+**最终稿件版本**：确保保存所有稿件的最终版本，便于记录修改历史及版本管理。
+
+**准备上传材料**
+
+**correction_proof**：请将修改后的稿件保存在此文件夹。命名时，请遵循版本管理规则，如：
+
+AMP1298700_v1.pdf（第一版修改稿）
+
+AMP1298700.pdf（最终版本，确保按照期刊要求的命名格式上传）
+
+**figs**：所有图表应根据期刊的格式要求进行调整和命名。例如：
+
+pan2024_dockerHDDM_fig1.pdf（图表文件命名应包括作者姓名、研究主题及图表编号，具体格式根据期刊要求）。
+
+**osf_backup**：确保将相关的数据、代码和研究结果上传至Open Science Framework (OSF)，以便公开存储和分享。
+
+data：存放所有实验数据及原始数据文件。
+
+code_behavior_analysis：存放与行为数据分析相关的代码。
+
+code_modeling：存放与计算建模相关的代码及结果文件。
+
+**GitHub备份**（如适用）：如果您有GitHub仓库，请确保将项目的代码和文档备份到GitHub，并同步上传至OSF。
+
+**文件版本管理**
+
+请按照版本管理要求对所有文件进行清晰的命名。使用统一的命名规则能帮助您在上传和存档时避免混淆。文件名应简洁明了，并能反映文件内容和版本信息。
+
+在提交材料时，务必检查文件是否符合期刊的格式要求，并确保上传的文件正确无误。
+
+**其他注意事项**
+
+在提交任何材料之前，请仔细检查文件的完整性、准确性及格式。
+
+保存每次修改后的稿件版本和所有相关材料，以便后期可能需要的补充或修正。
+
+对于代码的话，可以 备份为 zenoda。 优势
+
+永久保存，
+
+有 doi，
+
+每个版本的话也有备份。
+
+**后记**
+
+放平心态：谋事在人，成事在天。
+
+投稿前一定要严格要求自己，做到能做到的最好，投稿后减少控制欲，放平心态。
+
+按照以上时间线，提前做好时间规划，尽量确保人生阶段需要使用文章的时候能够赶得上。
+
+**TODO list**
+
+~~Checklist 的可视化。~~
+
+用颜色代表难度。
+
+~~简单~~
+
+~~一般~~
+
+~~困难~~
+
+文件命名
+
+统一命名。飞书里的命名和 github 不一样。
+
+另外，命名也需要修改，要和 新手导读统一。
+
+文件命名和项目快速迭代规则
+
+修改图。
+
+只用一个图，而不是两个。
+
+加个决策树，说明如果被拒怎么办；以及快速迭代的时候可能循环修改。
