@@ -1,0 +1,815 @@
+# =============================================================================
+# Study 3 & 4 Integration Analysis - Complete Code (Matching Original Style)
+# =============================================================================
+
+---
+title: "Study 3 & 4 Integration Analysis"
+author: "Research Team"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+if (!requireNamespace('pacman', quietly = TRUE)) {
+    install.packages('pacman')
+}
+
+pacman::p_load(
+  here, tidyverse, bruceR, boot,
+  ggplot2, ggdist, ggridges, patchwork,
+  papaja, cowplot, gridExtra,
+  metafor, e1071, nortest,
+  RColorBrewer
+)
+
+options(scipen = 999)
+options(warn = -1)
+
+# Color palette (consistent with original code)
+COLORS <- c("empirical" = "#a72126", "simulated" = "#12264f")
+```
+
+---
+
+# Part 1: Data Preprocessing
+
+## 1.1 Define Group Information
+```{r}
+# Group mapping for 8 experimental groups
+GROUP_INFO <- tribble(
+  ~new_groupID, ~source, ~P, ~T, ~W, ~Condition,
+  1, "S3+S4", 0, 30, 300, "P=0,T=30,W=300",
+  2, "S3+S4", 0, 30, 600, "P=0,T=30,W=600",
+  3, "S3+S4", 120, 30, 600, "P=120,T=30,W=600",
+  4, "S3+S4", 120, 80, 600, "P=120,T=80,W=600",
+  5, "S3+S4", 8, 100, 1100, "P=8,T=100,W=1100",
+  6, "S3+S4", 120, 500, 1500, "P=120,T=500,W=1500",
+  7, "S4", 120, 30, 800, "P=120,T=30,W=800",
+  8, "S4", 120, 80, 800, "P=120,T=80,W=800"
+)
+
+CONDITION_ORDER <- c(
+  "P=0,T=30,W=300", "P=0,T=30,W=600", "P=120,T=30,W=600",
+  "P=120,T=80,W=600", "P=8,T=100,W=1100", "P=120,T=500,W=1500",
+  "P=120,T=30,W=800", "P=120,T=80,W=800"
+)
+
+# Data type conversion
+convert_data_type_emp <- function(df) {
+  df <- df %>% 
+    dplyr::mutate(
+      groupID = as.numeric(groupID),
+      subjectID = as.numeric(subjectID),
+      gender = as.numeric(gender),
+      age = as.numeric(age),
+      handedness = as.numeric(handedness),
+      stage = as.character(stage),
+      trialID = as.numeric(trialID),
+      P = as.numeric(P), T = as.numeric(T), W = as.numeric(W),
+      Shape = as.character(Shape), Label = as.character(Label),
+      CorrectKey = as.character(CorrectKey), Response = as.character(Response),
+      RT = as.numeric(RT), Correct = as.numeric(Correct)
+    )
+  return(df)
+}
+```
+
+## 1.2 Load Empirical Data
+```{r}
+file_emp <- list.files(
+  here::here("3_Study3&4", "data", "raw", "emp_data"), 
+  pattern = "EXP.*\\.csv$", full.names = TRUE)
+
+# Exclude NoMask files
+file_emp_main <- file_emp[!grepl("NoMask", file_emp)]
+
+df_emp <- data.frame()
+for (i in seq_along(file_emp_main)) {
+  df <- read.csv(file_emp_main[i], header = TRUE) %>% convert_data_type_emp()
+  df_emp <- dplyr::bind_rows(df_emp, df)
+}
+
+message(paste("Empirical data:", nrow(df_emp), "rows"))
+message("Subjects per group:")
+print(table(df_emp$groupID))
+```
+
+## 1.3 Filter and Process
+```{r}
+df_emp <- df_emp %>%
+  filter(stage == "formal") %>%
+  mutate(
+    MatchKey = case_when(
+      subjectID %% 4 == 1 ~ "f",
+      subjectID %% 4 == 2 ~ "j",
+      subjectID %% 4 == 3 ~ "j",
+      subjectID %% 4 == 0 ~ "f",
+      TRUE ~ NA_character_
+    ),
+    Matchness = ifelse(CorrectKey == MatchKey, "match", "mismatch"),
+    T_ms = T * 1000, W_ms = W * 1000, RT_ms = RT * 1000,
+    Press = ifelse(!is.nan(RT), 1, 0)
+  )
+
+# Add Condition labels
+df_emp <- df_emp %>%
+  left_join(GROUP_INFO %>% select(new_groupID, Condition), 
+            by = c("groupID" = "new_groupID"))
+
+# Filter match trials
+df_emp_match <- df_emp %>% 
+  filter(Matchness == "match") %>%
+  mutate(Type = "empirical") %>%
+  select(groupID, subjectID, Type, trialID, P, T_ms, W_ms, Label, Press, Correct, RT_ms, Condition)
+```
+
+## 1.4 Load Simulated Data
+```{r}
+file_sim <- list.files(
+  here::here("3_Study3&4", "data", "raw", "sim_data"), 
+  pattern = "^d.*\\.csv$", full.names = TRUE)
+
+df_sim <- data.frame()
+for (i in seq_along(file_sim)) {
+  df <- read.csv(file_sim[i], header = TRUE)
+  df$groupID <- i
+  df_sim <- dplyr::bind_rows(df_sim, df)
+}
+
+df_sim <- df_sim %>%
+  mutate(
+    Type = "simulated",
+    RT_ms = RT * 1000,
+    T_ms = T, W_ms = W,
+    Press = response, Correct = response
+  ) %>%
+  select(groupID, subjectID, Type, trialID, P, T_ms, W_ms, Label, v, a, Press, Correct, RT_ms) %>%
+  left_join(GROUP_INFO %>% select(new_groupID, Condition), 
+            by = c("groupID" = "new_groupID"))
+```
+
+## 1.5 Combine
+```{r}
+df_combined <- dplyr::bind_rows(df_emp_match, df_sim) %>%
+  mutate(uniqueID = paste(Type, groupID, subjectID, sep = "_"))
+
+# Set Condition order
+df_combined$Condition <- factor(df_combined$Condition, levels = CONDITION_ORDER)
+
+bruceR::export(df_combined, file = here::here("3_Study3&4", "data", "processed", "combined_data.csv"))
+message("Data preprocessing complete!")
+```
+
+---
+
+# Part 2: Descriptive Statistics
+
+## 2.1 Group-Level Summary
+```{r}
+df_group <- df_combined %>%
+  group_by(groupID, Type, Label, Condition) %>%
+  summarise(
+    n = n(),
+    mean_RT = mean(RT_ms, na.rm = TRUE),
+    sd_RT = sd(RT_ms, na.rm = TRUE),
+    mean_ACC = mean(Correct == 1, na.rm = TRUE),
+    sd_ACC = sd(Correct == 1, na.rm = TRUE),
+    P = mean(P), T = mean(T_ms), W = mean(W_ms),
+    .groups = "drop"
+  )
+```
+
+## 2.2 Individual-Level Summary
+```{r}
+df_individual <- df_combined %>%
+  group_by(groupID, subjectID, Type, Label, Condition) %>%
+  summarise(
+    n = n(),
+    mean_RT = mean(RT_ms, na.rm = TRUE),
+    sd_RT = sd(RT_ms, na.rm = TRUE),
+    mean_ACC = mean(Correct == 1, na.rm = TRUE),
+    sd_ACC = sd(Correct == 1, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+## 2.3 Cohen's d Calculation
+```{r}
+df_group_wide <- df_group %>%
+  pivot_wider(
+    id_cols = c(groupID, Type, Condition),  
+    names_from = Label,
+    values_from = c(mean_RT, sd_RT, mean_ACC, sd_ACC, n)
+  )
+
+df_group_wide <- df_group_wide %>%
+  mutate(
+    cohen_d_RT = ifelse(!is.na(mean_RT_self) & !is.na(mean_RT_stranger),
+      (mean_RT_stranger - mean_RT_self) / sqrt(((n_stranger-1)*sd_RT_stranger^2 + (n_self-1)*sd_RT_self^2)/(n_self+n_stranger-2)), NA),
+    cohen_d_ACC = ifelse(!is.na(mean_ACC_self) & !is.na(mean_ACC_stranger),
+      (mean_ACC_self - mean_ACC_stranger) / sqrt(((n_self-1)*sd_ACC_self^2 + (n_stranger-1)*sd_ACC_stranger^2)/(n_self+n_stranger-2)), NA)
+  )
+
+df_individual_wide <- df_individual %>%
+  pivot_wider(
+    id_cols = c(groupID, subjectID, Type, Condition),  
+    names_from = Label,
+    values_from = c(mean_RT, sd_RT, mean_ACC, sd_ACC, n)
+  )
+
+df_individual_wide <- df_individual_wide %>%
+  mutate(
+    cohen_d_RT = ifelse(!is.na(mean_RT_self) & !is.na(mean_RT_stranger),
+      (mean_RT_stranger - mean_RT_self) / sqrt(((n_stranger-1)*sd_RT_stranger^2 + (n_self-1)*sd_RT_self^2)/(n_self+n_stranger-2)), NA),
+    cohen_d_ACC = ifelse(!is.na(mean_ACC_self) & !is.na(mean_ACC_stranger),
+      (mean_ACC_self - mean_ACC_stranger) / sqrt(((n_self-1)*sd_ACC_self^2 + (n_stranger-1)*sd_ACC_stranger^2)/(n_self+n_stranger-2)), NA)
+  )
+
+# Filter mask groups (exclude group 7 which is NoMask - not in current data)
+df_group_mask <- df_group %>% filter(groupID != 7)
+df_group_wide_mask <- df_group_wide %>% filter(groupID != 7)
+df_individual_mask <- df_individual %>% filter(groupID != 7)
+df_individual_mask_wide <- df_individual_wide %>% filter(groupID != 7)
+
+bruceR::export(df_group_wide, file = here::here("3_Study3&4", "data", "processed", "effect_size_group.csv"))
+message("Descriptive complete!")
+```
+
+---
+
+# Part 3: RT Analysis (Matching Original Style)
+
+## 3.1 RT by Condition
+```{r}
+# RT plot with both empirical and simulated
+rt_theme <- theme(
+  axis.title.x = element_text(size = 20, face = "bold", color = "black"),
+  axis.title.y = element_text(size = 20, face = "bold", color = "black"),
+  axis.text.x = element_text(size = 19, face = "bold", color = "black"),
+  axis.text.y = element_text(size = 19, face = "bold", color = "black"),
+  strip.text = element_text(size = 18, face = "bold", color = "black"),
+  legend.title = element_text(size = 21, face = "bold", color = "black"),
+  legend.text = element_text(size = 20, face = "bold", color = "black")
+)
+
+b1 <- ggplot(df_group_mask, 
+             aes(x = Label, y = mean_RT, color = Type, shape = Type)) +
+  geom_point(size = 3.5, position = position_dodge(0.5)) +
+  geom_errorbar(aes(ymin = mean_RT - sd_RT, ymax = mean_RT + sd_RT),
+                width = 0.1, position = position_dodge(0.5)) +
+  labs(x = "Type", y = "Reaction Time") +
+  facet_wrap(~ Condition, nrow = 2) +
+  papaja::theme_apa() +
+  scale_color_manual(values = COLORS) +
+  rt_theme
+
+RT <- b1 +
+  geom_jitter(data = df_individual_mask, 
+              aes(x = Label, y = mean_RT, color = Type, shape = Type),
+              size = 2.5, alpha = 0.3, 
+              position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5)) +
+  labs(x = "Design", y = "RT")
+
+RT
+```
+
+## 3.2 Cohen's d RT
+```{r}
+cd_RT <- ggplot(df_individual_mask_wide, 
+                aes(x = Condition, y = cohen_d_RT, color = Type, shape = Type)) +
+  geom_boxplot(aes(fill = Type), alpha = 0.2, outlier.shape = NA) +
+  geom_jitter(size = 2.5, alpha = 0.5, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75)) +
+  labs(x = "Design", y = "cohen's d RT") +
+  papaja::theme_apa() +
+  scale_color_manual(values = COLORS) +
+  scale_fill_manual(values = COLORS) +
+  scale_y_continuous(breaks = seq(-1, 1.5, by = 0.2)) +
+  rt_theme
+
+cd_RT
+```
+
+## 3.3 Save
+```{r}
+ggsave(here::here("3_Study3&4", "figures", "RT.png"), plot = RT, width = 11, height = 7, dpi = 300)
+ggsave(here::here("3_Study3&4", "figures", "cd_RT.png"), plot = cd_RT, width = 14, height = 5, dpi = 300)
+```
+
+---
+
+# Part 4: ACC Analysis
+
+## 4.1 ACC by Condition
+```{r}
+b2 <- ggplot(df_group_mask, 
+             aes(x = Label, y = mean_ACC, color = Type, shape = Type)) +
+  geom_point(size = 3.5, position = position_dodge(0.5)) +
+  geom_errorbar(aes(ymin = mean_ACC - sd_ACC, ymax = mean_ACC + sd_ACC),
+                width = 0.1, position = position_dodge(0.5)) +
+  labs(x = "Matchness", y = "ACC") +
+  facet_wrap(~ Condition, nrow = 2) +
+  scale_y_continuous(limits = c(0, 1)) +
+  papaja::theme_apa() +
+  scale_color_manual(values = COLORS) +
+  rt_theme
+
+ACC <- b2 +
+  geom_jitter(data = df_individual_mask, 
+              aes(x = Label, y = mean_ACC, color = Type, shape = Type),
+              size = 2.5, alpha = 0.3, 
+              position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5)) +
+  labs(x = "Design", y = "ACC")
+
+ACC
+```
+
+## 4.2 Cohen's d ACC
+```{r}
+cd_ACC <- ggplot(df_individual_mask_wide, 
+                 aes(x = Condition, y = cohen_d_ACC, color = Type, shape = Type)) +
+  geom_boxplot(aes(fill = Type), alpha = 0.2, outlier.shape = NA) +
+  geom_jitter(size = 2.5, alpha = 0.5, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75)) +
+  labs(x = "Design", y = "cohen's d ACC") +
+  papaja::theme_apa() +
+  scale_color_manual(values = COLORS) +
+  scale_fill_manual(values = COLORS) +
+  scale_y_continuous(breaks = seq(-1, 1.5, by = 0.2)) +
+  rt_theme
+
+cd_ACC
+```
+
+## 4.3 Combined Plot
+```{r}
+combined_plot1 <- RT / ACC +
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+
+combined_plot1
+```
+
+## 4.4 Cohen's d Combined Plot
+```{r}
+combined_plot2 <- cd_RT / cd_ACC +
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+
+combined_plot2
+```
+
+## 4.5 Save
+```{r}
+ggsave(here::here("3_Study3&4", "figures", "ACC.png"), plot = ACC, width = 11, height = 7, dpi = 300)
+ggsave(here::here("3_Study3&4", "figures", "cd_ACC.png"), plot = cd_ACC, width = 14, height = 5, dpi = 300)
+ggsave(here::here("3_Study3&4", "figures", "combined_plot1.png"), plot = combined_plot1, width = 12, height = 11, dpi = 300)
+ggsave(here::here("3_Study3&4", "figures", "combined_plot2.png"), plot = combined_plot2, width = 19, height = 11, dpi = 300)
+```
+
+---
+
+# Part 5: DDM Parameter Analysis
+
+## 5.1 Load DDM Parameters
+```{r}
+# Load DDM parameters from processed data
+para_emp <- read.csv(here::here("3_Study3&4", "data", "processed", "ddm_params.csv")) %>%
+  mutate(Type = "empirical") %>%
+  left_join(GROUP_INFO %>% select(new_groupID, Condition), by = c("groupID" = "new_groupID"))
+```
+
+## 5.2 Bootstrap v_diff
+```{r}
+set.seed(42)
+v_bootstrap <- data.frame()
+for (g in unique(para_emp$groupID)) {
+  d <- para_emp %>% filter(groupID == g) %>% pull(v_diff)
+  b <- boot::boot(d, function(x, i) mean(x[i]), R = 5000)
+  ci <- boot::boot.ci(b, type = "perc")$perc
+  v_bootstrap <- bind_rows(v_bootstrap, data.frame(
+    groupID = g, mean_v_diff = mean(d), ci_lower = ci[4], ci_upper = ci[5]
+  ))
+}
+
+v_bootstrap <- v_bootstrap %>% left_join(GROUP_INFO %>% select(new_groupID, Condition), 
+                                         by = c("groupID" = "new_groupID"))
+
+# Simulated v_diff
+para_sim <- df_sim %>% group_by(groupID, Label) %>% summarise(v = mean(v), a = mean(a), .groups = "drop") %>%
+  pivot_wider(id_cols = groupID, names_from = Label, values_from = v) %>%
+  mutate(v_diff = self - stranger) %>% left_join(GROUP_INFO %>% select(new_groupID, Condition), 
+                                                    by = c("groupID" = "new_groupID"))
+```
+
+## 5.3 Bootstrap Plots
+```{r}
+group_labels <- setNames(GROUP_INFO$Condition, GROUP_INFO$new_groupID)
+colors <- RColorBrewer::brewer.pal(8, "RdBu")
+
+bootstrap_vdiff <- ggplot(para_emp, aes(x = factor(groupID), y = v_diff, fill = factor(groupID))) +
+  stat_halfeye(adjust = 1, justification = -0.3, .width = 0, point_alpha = 0, alpha = 0.7, scale = 0.6) +
+  geom_jitter(aes(color = factor(groupID)), width = 0.1, alpha = 0.1, size = 1.5) +
+  geom_crossbar(data = v_bootstrap, aes(y = mean_v_diff, ymin = ci_lower, ymax = ci_upper), 
+                width = 0.15, color = "black", alpha = 0.2) +
+  geom_point(data = para_sim, aes(x = factor(groupID), y = v_diff), color = "black", shape = 17, size = 4) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+  scale_fill_manual(values = colors) +
+  scale_color_manual(values = colors) +
+  scale_x_discrete(labels = group_labels) +
+  scale_y_continuous(breaks = seq(-1, 6, by = 1)) +
+  labs(x = "Condition", y = "Bootstrap Means") +
+  papaja::theme_apa() + rt_theme + theme(legend.position = "none")
+
+bootstrap_vdiff
+```
+
+## 5.4 Save
+```{r}
+ggsave(here::here("3_Study3&4", "figures", "bootstrap_vdiff.png"), plot = bootstrap_vdiff, width = 22, height = 7, dpi = 300)
+
+bruceR::export(para_emp, file = here::here("3_Study3&4", "data", "processed", "ddm_params.csv"))
+bruceR::export(v_bootstrap, file = here::here("3_Study3&4", "data", "processed", "ddm_bootstrap.csv"))
+```
+
+---
+
+# Part 6: Hierarchical Bootstrap Analysis
+
+## 6.1 Prepare Bootstrap Data
+```{r}
+# Filter empirical data for bootstrap (exclude group 7 nomask)
+emp_bootstrap <- df_emp_match %>%
+  filter(!is.na(RT_ms) & groupID != 7) %>% 
+  mutate(
+    uniqueID = paste(groupID, subjectID, Label, sep = "_"),
+    subjID = paste(groupID, subjectID, sep = "_")
+  )
+
+# Label colors for plots
+label_colors <- c("self" = "#a72126", "stranger" = "#12264f")
+```
+
+## 6.2 Bootstrap Functions
+```{r}
+# Bootstrap Cohen's d for RT
+bootstrap_cohens_d_rt <- function(data, R = 5000) {
+  self_data <- data$RT_ms[data$Label == "self"]
+  stranger_data <- data$RT_ms[data$Label == "stranger"]
+  
+  if (length(self_data) < 2 | length(stranger_data) < 2) {
+    return(list(t0 = NA, t = NA))
+  }
+  
+  boot_fun <- function(d, indices) {
+    d_sub <- d[indices, ]
+    s <- d_sub$RT_ms[d_sub$Label == "self"]
+    st <- d_sub$RT_ms[d_sub$Label == "stranger"]
+    if (length(s) < 2 | length(st) < 2) return(NA)
+    pooled_sd <- sqrt(((length(s) - 1) * sd(s)^2 + (length(st) - 1) * sd(st)^2) / (length(s) + length(st) - 2))
+    (mean(st) - mean(s)) / pooled_sd
+  }
+  
+  boot::boot(data, boot_fun, R = R)
+}
+
+# Bootstrap Cohen's d for ACC
+bootstrap_cohens_d_acc <- function(data, R = 5000) {
+  self_data <- data$Correct[data$Label == "self"]
+  stranger_data <- data$Correct[data$Label == "stranger"]
+  
+  if (length(self_data) < 2 | length(stranger_data) < 2) {
+    return(list(t0 = NA, t = NA))
+  }
+  
+  boot_fun <- function(d, indices) {
+    d_sub <- d[indices, ]
+    s <- d_sub$Correct[d_sub$Label == "self"]
+    st <- d_sub$Correct[d_sub$Label == "stranger"]
+    if (length(s) < 2 | length(st) < 2) return(NA)
+    pooled_sd <- sqrt(((length(s) - 1) * sd(s)^2 + (length(st) - 1) * sd(st)^2) / (length(s) + length(st) - 2))
+    (mean(s) - mean(st)) / pooled_sd
+  }
+  
+  boot::boot(data, boot_fun, R = R)
+}
+
+# Extract bootstrap results
+extract_bootstrap_results <- function(boot_obj, subj_id, prefix) {
+  ci <- tryCatch({
+    boot::boot.ci(boot_obj, type = "perc")$perc[4:5]
+  }, error = function(e) c(NA, NA))
+  
+  data.frame(
+    subjID = subj_id,
+    d_mean = boot_obj$t0,
+    d_lower = ci[1],
+    d_upper = ci[2],
+    stringsAsFactors = FALSE
+  )
+}
+```
+
+## 6.3 Run Bootstrap for Each Subject (RT)
+```{r}
+set.seed(522)
+
+emp_bootstrap_cd_RT <- lapply(split(emp_bootstrap, emp_bootstrap$subjID), function(subj_data) {
+  bootstrap_cohens_d_rt(as.data.frame(subj_data), R = 5000)
+})
+```
+
+## 6.4 Extract RT Bootstrap Results
+```{r}
+emp_bootstrap_cd_RT_df <- do.call(rbind, lapply(seq_along(emp_bootstrap_cd_RT), function(i) {
+  boot_obj <- emp_bootstrap_cd_RT[[i]]
+  subj_id <- names(emp_bootstrap_cd_RT)[i]
+  extract_bootstrap_results(boot_obj, subj_id, prefix = "mean_RT")
+}))
+
+# Split subjID into groupID and subjectID
+emp_bootstrap_cd_RT_df <- emp_bootstrap_cd_RT_df %>%
+  separate(subjID, into = c("groupID", "subjectID"), sep = "_", remove = FALSE) %>%
+  arrange(subjID)
+```
+
+## 6.5 Run Bootstrap for Each Subject (ACC)
+```{r}
+set.seed(522)
+
+emp_bootstrap_cd_ACC <- lapply(split(emp_bootstrap, emp_bootstrap$subjID), function(subj_data) {
+  bootstrap_cohens_d_acc(as.data.frame(subj_data), R = 5000)
+})
+```
+
+## 6.6 Extract ACC Bootstrap Results
+```{r}
+emp_bootstrap_cd_ACC_df <- do.call(rbind, lapply(seq_along(emp_bootstrap_cd_ACC), function(i) {
+  boot_obj <- emp_bootstrap_cd_ACC[[i]]
+  subj_id <- names(emp_bootstrap_cd_ACC)[i]
+  extract_bootstrap_results(boot_obj, subj_id, prefix = "mean_ACC")
+}))
+
+# Split subjID into groupID and subjectID
+emp_bootstrap_cd_ACC_df <- emp_bootstrap_cd_ACC_df %>%
+  separate(subjID, into = c("groupID", "subjectID"), sep = "_", remove = FALSE) %>%
+  arrange(subjID)
+```
+
+## 6.7 Group-Level Hierarchical Bootstrap CI (RT)
+```{r}
+group_ids <- unique(emp_bootstrap_cd_RT_df$groupID)
+
+group_bootstrap_RT <- lapply(group_ids, function(gid) {
+  group_data <- emp_bootstrap_cd_RT_df %>% filter(groupID == gid)
+  
+  # Filter out subjects with NA bootstrap values
+  valid_subjects <- group_data %>% filter(!is.na(d_mean))
+  
+  if (nrow(valid_subjects) == 0) {
+    return(data.frame(
+      groupID = gid,
+      group_d_mean = NA,
+      group_d_lower = NA,
+      group_d_upper = NA
+    ))
+  }
+  
+  subject_split <- split(valid_subjects$d_mean, valid_subjects$subjectID)
+  n_boot <- length(subject_split[[1]])
+  
+  group_boot_d <- replicate(n_boot, {
+    sampled_d <- sapply(subject_split, function(d_vec) sample(d_vec, 1))
+    mean(sampled_d, na.rm = TRUE)
+  })
+  
+  data.frame(
+    groupID = gid,
+    group_d_mean = mean(group_boot_d, na.rm = TRUE),
+    group_d_lower = quantile(group_boot_d, 0.025, na.rm = TRUE),
+    group_d_upper = quantile(group_boot_d, 0.975, na.rm = TRUE)
+  )
+})
+
+group_bootstrap_RT_df <- bind_rows(group_bootstrap_RT)
+```
+
+## 6.8 Group-Level Hierarchical Bootstrap CI (ACC)
+```{r}
+group_bootstrap_ACC <- lapply(group_ids, function(gid) {
+  group_data <- emp_bootstrap_cd_ACC_df %>% filter(groupID == gid)
+  
+  # Filter out subjects with NA bootstrap values
+  valid_subjects <- group_data %>% filter(!is.na(d_mean))
+  
+  if (nrow(valid_subjects) == 0) {
+    return(data.frame(
+      groupID = gid,
+      group_d_mean = NA,
+      group_d_lower = NA,
+      group_d_upper = NA
+    ))
+  }
+  
+  subject_split <- split(valid_subjects$d_mean, valid_subjects$subjectID)
+  n_boot <- length(subject_split[[1]])
+  
+  group_boot_d <- replicate(n_boot, {
+    sampled_d <- sapply(subject_split, function(d_vec) sample(d_vec, 1))
+    mean(sampled_d, na.rm = TRUE)
+  })
+  
+  data.frame(
+    groupID = gid,
+    group_d_mean = mean(group_boot_d, na.rm = TRUE),
+    group_d_lower = quantile(group_boot_d, 0.025, na.rm = TRUE),
+    group_d_upper = quantile(group_boot_d, 0.975, na.rm = TRUE)
+  )
+})
+
+group_bootstrap_ACC_df <- bind_rows(group_bootstrap_ACC)
+```
+
+## 6.9 Summary Bootstrap Statistics (RT)
+```{r}
+# Print summary statistics
+cat("=== RT Bootstrap Summary ===\n")
+print(head(emp_bootstrap_cd_RT_df))
+cat("\n=== Group-Level RT Bootstrap CI ===\n")
+print(group_bootstrap_RT_df)
+```
+
+## 6.10 Summary Bootstrap Statistics (ACC)
+```{r}
+cat("=== ACC Bootstrap Summary ===\n")
+print(head(emp_bootstrap_cd_ACC_df))
+cat("\n=== Group-Level ACC Bootstrap CI ===\n")
+print(group_bootstrap_ACC_df)
+```
+
+## 6.11 Save Bootstrap Results
+```{r}
+bruceR::export(emp_bootstrap_cd_RT_df, file = here::here("3_Study3&4", "data", "processed", "bootstrap_cd_RT.csv"))
+bruceR::export(emp_bootstrap_cd_ACC_df, file = here::here("3_Study3&4", "data", "processed", "bootstrap_cd_ACC.csv"))
+bruceR::export(group_bootstrap_RT_df, file = here::here("3_Study3&4", "data", "processed", "group_bootstrap_RT.csv"))
+bruceR::export(group_bootstrap_ACC_df, file = here::here("3_Study3&4", "data", "processed", "group_bootstrap_ACC.csv"))
+```
+
+---
+
+# Part 7: Ridge Plots
+
+## 7.1 Prepare Ridge Data
+```{r}
+# Prepare data for ridge plots
+df_emp_individual_wide <- df_individual_wide %>%
+  filter(Type == "empirical" & groupID != 7) %>%
+  unite(subjID, groupID, subjectID, sep = "_", remove = FALSE) %>%
+  select(subjID, groupID, subjectID, cohen_d_RT, cohen_d_ACC)
+
+df_emp_group_wide <- df_group_wide %>%
+  filter(Type == "empirical" & groupID != 7) %>%
+  select(groupID, cohen_d_RT, cohen_d_ACC)
+
+# Prepare RT bootstrap long format
+emp_bootstrap_RT_long <- emp_bootstrap_cd_RT_df %>%
+  select(subjID, groupID, subjectID) %>%
+  mutate(label = "RT") %>%
+  left_join(df_emp_match %>% 
+              filter(Type == "empirical") %>%
+              group_by(groupID, subjectID, Label) %>%
+              summarise(mean_RT = mean(RT_ms, na.rm = TRUE), .groups = "drop") %>%
+              mutate(subjID = paste(groupID, subjectID, sep = "_")),
+            by = "subjID")
+
+# Prepare ACC bootstrap long format  
+emp_bootstrap_ACC_long <- emp_bootstrap_cd_ACC_df %>%
+  select(subjID, groupID, subjectID) %>%
+  mutate(label = "ACC") %>%
+  left_join(df_emp_match %>%
+              filter(Type == "empirical") %>%
+              group_by(groupID, subjectID, Label) %>%
+              summarise(mean_ACC = mean(Correct, na.rm = TRUE), .groups = "drop") %>%
+              mutate(subjID = paste(groupID, subjectID, sep = "_")),
+            by = "subjID")
+```
+
+## 7.2 Ridge Plot: Cohen's d RT
+```{r}
+# Filter valid data for ridge plot
+ridge_data_RT <- emp_bootstrap_cd_RT_df %>% 
+  filter(!is.na(d_mean)) %>%
+  mutate(groupID = as.factor(groupID))
+
+ridge_group_RT <- group_bootstrap_RT_df %>%
+  filter(!is.na(group_d_mean)) %>%
+  mutate(groupID = as.factor(groupID))
+
+Ridge_cd_RT <- ggplot() +
+  geom_density_ridges(
+    data = ridge_data_RT, 
+    aes(x = d_mean, y = groupID),
+    scale = 0.8,
+    fill = "#594c57",
+    alpha = 0.6,
+    color = NA,
+    bandwidth = 0.1
+  ) +
+  geom_segment(
+    data = ridge_group_RT,
+    aes(x = group_d_lower, xend = group_d_upper, y = as.factor(groupID), yend = as.factor(groupID)),
+    color = "black",
+    size = 1.2
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", size = 1) +
+  scale_x_continuous(
+    limits = c(-1, 2),
+    breaks = seq(-1.5, 2, by = 0.5)
+  ) +
+  labs(
+    x = "Cohen's d RT",
+    y = "Group"
+  ) +
+  papaja::theme_apa() +
+  rt_theme
+
+Ridge_cd_RT
+```
+
+## 7.3 Ridge Plot: Cohen's d ACC
+```{r}
+# Filter valid data for ridge plot
+ridge_data_ACC <- emp_bootstrap_cd_ACC_df %>% 
+  filter(!is.na(d_mean)) %>%
+  mutate(groupID = as.factor(groupID))
+
+ridge_group_ACC <- group_bootstrap_ACC_df %>%
+  filter(!is.na(group_d_mean)) %>%
+  mutate(groupID = as.factor(groupID))
+
+Ridge_cd_ACC <- ggplot() +
+  geom_density_ridges(
+    data = ridge_data_ACC, 
+    aes(x = d_mean, y = groupID),
+    scale = 0.8,
+    fill = "#594c57",
+    alpha = 0.6,
+    color = NA,
+    bandwidth = 0.1
+  ) +
+  geom_segment(
+    data = ridge_group_ACC,
+    aes(x = group_d_lower, xend = group_d_upper, y = as.factor(groupID), yend = as.factor(groupID)),
+    color = "black",
+    size = 1.2
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", size = 1) +
+  scale_x_continuous(
+    limits = c(-1, 2),
+    breaks = seq(-1.5, 2, by = 0.5)
+  ) +
+  labs(
+    x = "Cohen's d ACC",
+    y = "Group"
+  ) +
+  papaja::theme_apa() +
+  rt_theme
+
+Ridge_cd_ACC
+```
+
+## 7.4 Combined Ridge Plot
+```{r}
+Ridge_cd_RT_clean <- Ridge_cd_RT +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+Ridge_cd_ACC_clean <- Ridge_cd_ACC +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+Combined_Ridge <- Ridge_cd_RT_clean + Ridge_cd_ACC_clean +
+  plot_layout(ncol = 2, guides = "collect") & 
+  theme(legend.position = "bottom")
+
+Combined_Ridge
+```
+
+## 7.5 Save Ridge Plots
+```{r}
+ggsave(here::here("3_Study3&4", "figures", "Ridge_cd_RT.png"), plot = Ridge_cd_RT, width = 14, height = 10, dpi = 300)
+ggsave(here::here("3_Study3&4", "figures", "Ridge_cd_ACC.png"), plot = Ridge_cd_ACC, width = 14, height = 10, dpi = 300)
+ggsave(here::here("3_Study3&4", "figures", "Ridge_combined.png"), plot = Combined_Ridge, width = 22, height = 10, dpi = 300)
+```
+
+---
+
+Analysis complete!
+
+---
+
+*`r Sys.Date()`*
