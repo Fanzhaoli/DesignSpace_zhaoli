@@ -1,0 +1,189 @@
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5000}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Phase
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Description
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Training Stage & Participants were asked to remember the association between geometric shapes (triangle, square, and circle) and different persons (the self, a named best friend, or an unfamiliar person). The shapes themselves were not presented at this stage. For example, a participant was told, ``Mary {[}the stated best friend of the participant{]} is a circle; you are a triangle; and a stranger is represented by a square.'' Lasting for 60s. \\
+Practice Stage & Participants were asked to complete 12 practice trials to consolidate the shape-label association. Each trial started with a fixation cross (500 ms), followed by the simultaneous presentation of a shape and a label (e.g., a triangle and the word ``you'') for 100 ms. After the stimulus disappeared, participants were required to make a matching judgment by pressing one of two keys (e.g., ``F'' for match and ``J'' for mismatch) within a response window of 1000 ms. Feedback was provided after each trial, indicating whether the response was correct or incorrect. The practice stage lasted for approximately 5 minutes.Participants were informed of their overall accuracy at the end of the practicing phase, participants with 60\% accuracy will move to the formal experiment stage \\
+Formal Experiment Stage & Participants were asked to complete 240 formal experimental trials. The trial structure was the same as in the practice stage, except that no feedback was provided after each trial. The formal experiment lasted for approximately 20 minutes. \\
+\end{longtable}
+\efloatseparator
+ 
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Trial Stage
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Description
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Duration
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+& a white fixation cross (0.8 \(^\circ\) \(\times\) 0.8\(^\circ\)). & 500 ms \\
+& a shape (triangle, circle, or square, at 3.8\(^\circ\) \(\times\) 3.8\(^\circ\) ) and a label (``You'', ``Mary'', or ``Stranger'', at 3.1\(^\circ\)/3.6\(^\circ\) \(\times\) 1.6\(^\circ\)) are simultaneously presented. & 100 ms \\
+& Pressing one of two keys (e.g., ``F'' for match and ``J'' for mismatch) as fast and accurately as possible & 800 - 1000 ms \\
+& ``Correct''/``Wrong''/``Too slow'' & 500 ms \\
+\end{longtable}
+\efloatseparator
+ 
+\begin{ThreePartTable}
+
+\begin{TableNotes}[para]
+\normalsize{\textit{Note.} \textit{N} = sample size; \textit{P} = number of practice trials; \textit{T} = stimulus presentation time; \textit{W} = response window.}
+\end{TableNotes}
+
+\begin{longtable}{llllllll}\noalign{\getlongtablewidth\global\LTcapwidth=\longtablewidth}
+\caption{\label{tab:tbl-table1}Information of Studies Included in Meta-Analysis}\\
+\toprule
+ArticleID & \multicolumn{1}{c}{Study} & \multicolumn{1}{c}{\textit{N}} & \multicolumn{1}{c}{\textit{P}} & \multicolumn{1}{c}{\textit{T}} & \multicolumn{1}{c}{\textit{W}} & \multicolumn{1}{c}{dRT} & \multicolumn{1}{c}{dACC}\\
+\midrule
+\endfirsthead
+\caption*{\normalfont{Table \ref{tab:tbl-table1} continued}}\\
+\toprule
+ArticleID & \multicolumn{1}{c}{Study} & \multicolumn{1}{c}{\textit{N}} & \multicolumn{1}{c}{\textit{P}} & \multicolumn{1}{c}{\textit{T}} & \multicolumn{1}{c}{\textit{W}} & \multicolumn{1}{c}{dRT} & \multicolumn{1}{c}{dACC}\\
+\midrule
+\endhead
+Dalmaso2019 & Study 1 & 36 & 12 & 100 & 1000 & 0.98 & 1.84\\
+Dalmaso2019 & Study 2 & 38 & 12 & 100 & 1000 & 0.79 & 1.43\\
+Enock2018 & Study 1 & 42 & 12 & 100 & 1100 & 1.38 & 1.23\\
+Enock2018 & Study 2 & 31 & 12 & 100 & 1100 & 0.92 & 1.02\\
+Enock2020 & Study 2 & 22 & 12 & 100 & 1100 & 0.96 & NA\\
+Kim2020 & Study 1a & 57 & 12 & 100 & 1200 & 1.44 & 2.11\\
+Kim2020 & Study 1b & 25 & 12 & 100 & 1200 & 1.44 & 1.29\\
+Jiang2018 & Study 1 & 32 & 9 & 100 & 1100 & 1.44 & NA\\
+Jiang2018 & Study 1 & 24 & 9 & 100 & 1100 & 0.99 & NA\\
+Jiang2018 & Study 2A & 32 & 9 & 100 & 1100 & 1.43 & NA\\
+Jiang2018 & Study 2A & 32 & 9 & 100 & 1100 & 0.73 & NA\\
+Jiang2018 & Study 2A & 32 & 9 & 100 & 1100 & 0.81 & NA\\
+Jiang2018 & Study 2B & 32 & 9 & 100 & 1100 & 0.88 & NA\\
+Jiang2018 & Study 2B & 32 & 9 & 100 & 1100 & 1.08 & NA\\
+Jiang2018 & Study 2B & 32 & 9 & 100 & 1100 & 0.80 & NA\\
+Jiang2018 & Study 3 & 30 & 20 & 100 & 3000 & 1.12 & NA\\
+Jiang2018 & Study 4 & 21 & 20 & 100 & 1100 & 1.28 & NA\\
+Jones2018 & study 5 & 18 & 12 & 100 & 2000 & 2.11 & 2.30\\
+Jones2018 & study 6 & 18 & 12 & 100 & 2000 & 1.48 & 1.17\\
+Kim2019 & Study 2 & 40 & 12 & 100 & 1100 & 1.15 & 1.46\\
+Kim2019 & Study 3 & 38 & 12 & 100 & 1100 & 1.64 & 1.69\\
+Martínez-Pérez2020 & Study 1 & 18 & 48 & 100 & 1100 & 3.30 & 0.38\\
+Martínez-Pérez2020 & Study 1 & 18 & 48 & 100 & 1100 & 3.34 & -0.09\\
+Martínez-Pérez2020 & Study 1 & 18 & 48 & 100 & 1100 & 2.42 & -0.12\\
+Martínez-Pérez2020 & Study 1 & 18 & 48 & 100 & 1100 & 2.52 & 0.13\\
+Martínez-Pérez2020 & Study 1 & 18 & 48 & 100 & 1100 & 3.10 & 1.97\\
+Qian2019 & Study 1 & 24 & 30 & 100 & 1000 & 0.98 & NA\\
+Qian2019 & Study 1 & 24 & 30 & 100 & 1000 & 1.55 & NA\\
+Qian2019 & Study 1 & 24 & 30 & 100 & 1000 & 0.91 & NA\\
+Qian2019 & Study 1 & 24 & 30 & 100 & 1000 & 1.55 & NA\\
+Schäfer2019a & Study 1 & 35 & 48 & 100 & 1500 & 0.94 & 0.83\\
+Schäfer2019a & Study 1 & 30 & 48 & 100 & 1500 & 0.67 & 0.73\\
+Stein2016 & Study 1 & 22 & 12 & 100 & 1500 & 3.23 & NA\\
+Stolte2017 & Study 1a & 20 & 12 & 100 & 1000 & 1.48 & 1.49\\
+Stolte2017 & Study 1b & 20 & 12 & 100 & 1000 & 0.65 & 0.89\\
+Sui2015 & Study 1 & 17 & 18 & 100 & 1000 & 1.62 & NA\\
+Sui2015 & Study 1 & 17 & 18 & 100 & 1000 & 1.17 & NA\\
+Sui2015 & Study 1 & 17 & 18 & 100 & 1000 & 1.26 & NA\\
+Sui2016 & Study 1 & 20 & 10 & 100 & 1000 & 1.15 & NA\\
+Sui2016 & Study 1 & 20 & 10 & 100 & 1000 & 0.68 & NA\\
+\bottomrule
+\addlinespace
+\insertTableNotes
+\end{longtable}
+
+\end{ThreePartTable}
+\begin{table*}[hbt]
+\ifnextchar[{\eatarg}{}
+[tbp]
+
+\begin{center}
+\begin{threeparttable}
+
+\caption{\label{tab:tbl-demographics}Demographic Information and Trial Counts by Experimental Design}
+
+\begin{tabular}{llllll}
+\toprule
+DesignId & \multicolumn{1}{c}{Exp Design (P, T, W)} & \multicolumn{1}{c}{N (females)} & \multicolumn{1}{c}{Age (M ± SD)} & \multicolumn{1}{c}{$Trials_{total}$} & \multicolumn{1}{c}{$Trial_{valid}$}\\
+\midrule
+D1 & P=0, T=30, W=300 & 11 (8) & 23.1 ± 1.2 & 5720 & 1625\\
+D2 & P=0, T=30, W=600 & 12 (9) & 22.6 ± 2.1 & 6240 & 2868\\
+D3a & P=120, T=30, W=600 & 10 (7) & 22.7 ± 2.1 & 5200 & 3222\\
+D3b & P=120, T=30, W=800 & 11 (11) & 22.9 ± 1.5 & 5720 & 3478\\
+D4a & P=120, T=80, W=600 & 12 (12) & 21.8 ± 1.6 & 6240 & 4786\\
+D4b & P=120, T=80, W=800 & 11 (9) & 22.7 ± 1.6 & 5720 & 4834\\
+D5 & P=8, T=100, W=1100 & 11 (7) & 23.3 ± 1.2 & 5720 & 5089\\
+D6 & P=120, T=500, W=1500 & 10 (10) & 22.1 ± 2 & 5200 & 4927\\
+\bottomrule
+\end{tabular}
+
+\end{threeparttable}
+\end{center}
+
+\end{table*}
+\begin{table*}[hbt]
+\ifnextchar[{\eatarg}{}
+[tbp]
+
+\begin{center}
+\begin{threeparttable}
+
+\caption{\label{tab:tbl-design-effect-sizes}Design Parameters and Effect Sizes: Model Predictions vs Empirical Data}
+
+\begin{tabular}{llllllll}
+\toprule
+Design & \multicolumn{1}{c}{P} & \multicolumn{1}{c}{T} & \multicolumn{1}{c}{W} & \multicolumn{1}{c}{$d_{RT,pred}$} & \multicolumn{1}{c}{$d_{RT}$} & \multicolumn{1}{c}{$d_{ACC,pred}$} & \multicolumn{1}{c}{$d_{ACC}$}\\
+\midrule
+D1 & 0 & 30 & 300 & 0.00 & 0.00 & 0.21 & 0.01\\
+D2 & 0 & 30 & 600 & 0.26 & -0.01 & 0.89 & 0.29\\
+D3a & 120 & 30 & 600 & 0.39 & -0.04 & 0.91 & 0.21\\
+D3b & 120 & 30 & 800 & 0.44 & 0.04 & 0.97 & 0.48\\
+D4a & 120 & 80 & 600 & 0.51 & 0.18 & 0.86 & 0.50\\
+D4b & 120 & 80 & 800 & 0.68 & 0.23 & 0.79 & 0.36\\
+D5 & 8 & 100 & 1100 & 0.77 & 0.35 & 0.78 & 0.42\\
+D6 & 120 & 500 & 1500 & 2.19 & 0.31 & 0.27 & 0.09\\
+\bottomrule
+\end{tabular}
+
+\end{threeparttable}
+\end{center}
+
+\end{table*}
+\begin{table*}[hbt]
+\ifnextchar[{\eatarg}{}
+[tbp]
+
+\begin{center}
+\begin{threeparttable}
+
+\caption{\label{tab:tbl-ddm-parameters}DDM Parameters: Model Predictions vs Empirical Data}
+
+\begin{tabular}{llllllllllll}
+\toprule
+Design & \multicolumn{1}{c}{P} & \multicolumn{1}{c}{T} & \multicolumn{1}{c}{W} & \multicolumn{1}{c}{$v_{self,pred}$} & \multicolumn{1}{c}{$v_{self}$} & \multicolumn{1}{c}{$v_{str,pred}$} & \multicolumn{1}{c}{$v_{str}$} & \multicolumn{1}{c}{$v_{diff,pred}$} & \multicolumn{1}{c}{$v_{diff}$} & \multicolumn{1}{c}{$a_{pred}$} & \multicolumn{1}{c}{$a$}\\
+\midrule
+D1 & 0 & 30 & 300 & 2.22 & 1.84 & 0.55 & 1.86 & 1.67 & -0.02 & 0.22 & 0.57\\
+D2 & 0 & 30 & 600 & 2.58 & 0.68 & 0.84 & 0.22 & 1.74 & 0.46 & 2.26 & 0.94\\
+D3a & 120 & 30 & 600 & 3.08 & 0.60 & 0.96 & -0.06 & 2.12 & 0.65 & 2.20 & 0.92\\
+D3b & 120 & 30 & 800 & 3.11 & 1.69 & 1.11 & 0.66 & 2.00 & 1.03 & 3.28 & 1.48\\
+D4a & 120 & 80 & 600 & 3.54 & 1.23 & 1.18 & 0.29 & 2.35 & 0.94 & 2.44 & 1.36\\
+D4b & 120 & 80 & 800 & 3.65 & 1.79 & 1.37 & 1.14 & 2.28 & 0.66 & 3.40 & 1.80\\
+D5 & 8 & 100 & 1100 & 3.22 & 1.67 & 1.18 & 0.73 & 2.04 & 0.94 & 3.59 & 1.82\\
+D6 & 120 & 500 & 1500 & 7.28 & 2.54 & 2.00 & 2.07 & 5.29 & 0.48 & 3.60 & 3.60\\
+\bottomrule
+\end{tabular}
+
+\end{threeparttable}
+\end{center}
+
+\end{table*}

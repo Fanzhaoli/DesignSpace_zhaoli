@@ -1,0 +1,7 @@
+\begin{figure*}[hbt]
+\ifnextchar[{\eatarg}{}
+
+\centering
+\pandocbounded{\includegraphics[keepaspectratio]{DesignSpaceSPE_files/figure-latex/fig-figure2-1.pdf}}
+\caption{\label{fig:fig-figure2}(A) The scarce distribution of existing experiments with RT data in the three-dimensional design space; (B) Experimental Design Dimensions and Cohen's \(d_{RT}\) of Self-Prioritization Effect; (C) The scarce distribution of existing experiments with ACC data in the three-dimensional design space; (D) Experimental Design Dimensions and Cohen's \(d_{ACC}\) of Self-Prioritization Effect}
+\end{figure*}
