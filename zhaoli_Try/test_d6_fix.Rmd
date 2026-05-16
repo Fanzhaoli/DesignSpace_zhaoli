@@ -1,0 +1,352 @@
+---
+title: "DDM Model Improvement Tests"
+author: "Fanzhaoli"
+date: "2025-04-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+if (!requireNamespace('pacman', quietly = TRUE)) {
+    install.packages('pacman')
+}
+pacman::p_load(
+  tidyverse, here
+)
+# Disable scientific notation
+options(scipen = 999)
+```
+## DDM模型参数说明
+
+### 核心参数（来自Tran et al., 2021的参考范围）
+
+| 参数 | 符号 | 文献参考范围 | 本模型实现 | 说明 |
+|------|------|-------------|-------------|----------|
+| 漂移率 | v | 0.01-18.51 | 需要添加v_max | 证据积累速度 |
+| 边界分离度 | a | 0.11-7.47 | ~0.5-4.5 | 反应谨慎程度 |
+| 起始点 | z | z/a: 0.04-0.96 | **未实现** ⚠️ | 反应偏倚 |
+| 非决策时间 | Ter | 0-3.69s | T0=0.2s | 刺激编码+执行时间 |
+
+### 本模型中的参数
+
+- **BETA1/BETA2**: 边界调整参数（影响a）
+- **GAMMA**: v_P函数的gamma参数
+- **noise_scale**: 过程噪声（影响v的方差）
+- **v_max**: 漂移率上限（新添加）
+
+## 1. 基础模型函数
+
+```{r base-functions, echo=TRUE}
+# 边界参数 (Boundary Separation Parameters)
+# BETA1: 当 M > 600 时的边界调整系数（反应窗口充足时被试更谨慎）
+# BETA2: 当 M <= 600 时的边界调整系数
+BETA1 <- 0.2; BETA2 <- 0.0
+
+T0 <- 0.2
+
+# P学习效应的gamma参数 (P-learning gamma parameter)
+GAMMA <- 0.2
+
+# v_P函数：练习试次P对漂移率的影响
+#   P: 练习试次数量
+#   P1: 中心点 (默认为4)
+#   k_min/k_max: 变化范围
+#   gamma: 陡峭程度
+#   P0: 中心化参数
+
+k_P_func <- function(P, k_min=0.01, k_max=0.15, gamma=0.1, P0=32) {
+  # sigmoid函数，使得P增加时k先快速增加后趋于稳定
+  k_min + (k_max - k_min) / (1 + exp(-gamma * (P - P0)))
+}
+
+v_P_func <- function(P, P1=4, k_min=0.01, k_max=0.15, gamma=0.1, P0=32) {
+  k <- k_P_func(P, k_min, k_max, gamma, P0)
+  # 返回P对漂移率的贡献（0-1之间）
+  1 / (1 + exp(-k * (P - P1)))
+}
+
+# compute_a函数：计算边界分离度 a
+#   M: 总可用时间 = T + W (呈现时间 + 反应窗口)
+#   beta1: M>600时的调整系数
+
+compute_a <- function(M, beta1=BETA1) {
+  # 首先用sigmoid函数计算基础边界（随M增加而增加）
+  a_0 <- 1 / (1 + exp(-0.01 * (M - 600))) * 3
+  
+  # 根据M的大小调整边界
+  if (M > 600) {
+    # 反应窗口充足时，被试更谨慎，边界更高
+    a_0 * (1 + beta1)
+  } else {
+    # 时间紧迫时，被试更冲动
+    a_0 * (1 + BETA2)
+  }
+}
+
+# 8个实验条件：D1-D6, D3a/D4a, D3b/D4b
+designs <- tribble(
+  ~name, ~gid, ~P, ~T, ~W,
+  "D1", 1, 0, 30, 300, "D2", 2, 0, 30, 600,
+  "D3a", 3, 120, 30, 600, "D4a", 4, 120, 80, 600,
+  "D5", 5, 8, 100, 1100, "D6", 6, 120, 500, 1500,
+  "D3b", 7, 120, 30, 800, "D4b", 8, 120, 80, 800
+)
+
+# 实证数据
+emp <- tibble(gid=1:8, d_rt=c(0.005,-0.014,-0.044,0.046,0.349,0.305,0.205,0.232),
+  rt_s=c(259,422,388,503,652,862,568,582), rt_st=c(259,421,382,509,720,934,597,613),
+  acc_s=c(0.668,0.721,0.619,0.845,0.885,0.966,0.863,0.873), acc_st=c(0.667,0.518,0.485,0.624,0.704,0.904,0.736,0.758))
+```
+
+## 2. 模拟函数
+
+```{r simulation, echo=TRUE}
+# simulate_cond函数：模拟单个条件下的决策过程
+# 
+# DDM模拟流程：
+# 1. 从起点z开始积累证据
+# 2. 每一步漂移：x_t = x_{t-1} + v*dt + noise
+# 3. 达到上界a → 反应"self" (resp=1)
+# 4. 达到下界0 → 反应"stranger" (resp=2)
+# 5. 超过最大时间 → 超时（不记录）
+#
+# 参数：
+#   P, T, W: 实验参数
+#   ck: 条件 (1=self, 0=stranger)
+#   compute_v_fn: 计算漂移率的函数
+#   beta1: 边界参数
+#   t0: 非决策时间
+#   noise_scale: 过程噪声标准差
+#   n_sub: 模拟被试数
+#   n_tri: 每被试试次数
+
+simulate_cond <- function(P, T, W, ck, compute_v_fn, beta1=BETA1, t0=T0, noise_scale=1.0, n_sub=5, n_tri=500) {
+  M <- T + W  # 总可用时间 (ms)
+  
+  # 最大模拟时间（转换为秒）
+  mt <- (W + T - t0)*0.001 + 0.001
+  mts <- as.integer(mt/0.001)  # 模拟步数
+  
+  # 计算边界a
+  ab <- compute_a(M, beta1)
+  
+  rts <- c()    # 存储反应时间
+  resps <- c()  # 存储反应
+  
+  # 遍历每个模拟被试
+  for (s in 1:n_sub) {
+    # 每个被试的边界有随机变异
+    a <- max(rnorm(1, ab, 0.5), 0.01)
+    
+    # 遍历每个试次
+    for (t in 1:n_tri) {
+      # 计算漂移率
+      v <- compute_v_fn(T, P, ck)
+      
+      # 添加过程噪声（模拟认知噪声）
+      v <- rnorm(1, v, noise_scale)
+      
+      x <- a/2  # 相当于 z = a/2，即 z/a = 0.5 ⚠️
+      
+      time <- 0
+      resp <- 0
+      
+      # 证据积累过程
+      for (step in 1:mts) {
+        # Wiener过程：漂移 + 噪声
+        x <- x + v*0.001 + rnorm(1)*sqrt(0.001)
+        time <- time + 0.001
+        
+        # 检查是否达到边界
+        if (x >= a) {
+          resp <- 1  # 反应"self"
+          break
+        }
+        if (x <= 0) {
+          resp <- 2  # 反应"stranger"
+          break
+        }
+      }
+      
+      # 记录有效试次（非超时）
+      if (time + t0 < mt) {
+        rts <- c(rts, (time+t0)*1000)  # 转换为毫秒
+        resps <- c(resps, resp)
+      }
+    }
+  }
+  list(rt=rts, resp=resps)
+}
+
+# d_RT = (RT_stranger - RT_self) / SD_pooled
+# 正值表示self更快
+
+cd_rt <- function(a, b) {
+  n1 <- length(a); n2 <- length(b)
+  if(n1<2||n2<2) return(NA)
+  (mean(b)-mean(a))/sqrt(((n1-1)*sd(a)^2+(n2-1)*sd(b)^2)/(n1+n2-2))
+}
+
+run_test <- function(name, compute_v_fn, beta1=BETA1, t0=T0, noise_scale=1.0) {
+  set.seed(42)
+  cat(sprintf("\n=== %s ===\n", name))
+  mae_d <- 0; mae_rs <- 0; mae_rst <- 0; mae_acc_s <- 0; mae_acc_st <- 0
+  d6_info <- NULL
+  for (i in 1:nrow(designs)) {
+    r <- designs[i,]; e <- emp %>% filter(gid==r$gid)
+    ss <- simulate_cond(r$P, r$T, r$W, 1, compute_v_fn, beta1, t0, noise_scale)
+    sst <- simulate_cond(r$P, r$T, r$W, 0, compute_v_fn, beta1, t0, noise_scale)
+    d <- cd_rt(ss$rt, sst$rt)
+    rs <- mean(ss$rt); rst <- mean(sst$rt)
+    acc_s <- mean(ss$resp==1); acc_st <- mean(sst$resp==1)
+    cat(sprintf("  %-6s d_RT: emp=%.3f sim=%.3f err=%.3f | RT_self: emp=%d sim=%.0f err=%.0f\n",
+      r$name, e$d_rt, d, abs(d-e$d_rt), e$rt_s, rs, abs(rs-e$rt_s)))
+    mae_d <- mae_d + abs(d - e$d_rt)
+    mae_rs <- mae_rs + abs(rs - e$rt_s)
+    mae_rst <- mae_rst + abs(rst - e$rt_st)
+    mae_acc_s <- mae_acc_s + abs(acc_s - e$acc_s)
+    mae_acc_st <- mae_acc_st + abs(acc_st - e$acc_st)
+    if (r$name == "D6") {
+      d6_info <- list(rt_s=rs, rt_st=rst, acc_s=acc_s, acc_st=acc_st, d_rt=d,
+                      rt_s_emp=e$rt_s, rt_st_emp=e$rt_st, d_rt_emp=e$d_rt)
+    }
+  }
+  cat(sprintf("  MAE: d_RT=%.3f | RT_self=%.0f | RT_str=%.0f | ACC_self=%.3f | ACC_str=%.3f\n", 
+              mae_d/8, mae_rs/8, mae_rst/8, mae_acc_s/8, mae_acc_st/8))
+  if (!is.null(d6_info)) {
+    cat(sprintf("\n  D6 Detail:\n"))
+    cat(sprintf("    RT_self: emp=%d sim=%.0f err=%.0f\n", d6_info$rt_s_emp, d6_info$rt_s, abs(d6_info$rt_s - d6_info$rt_s_emp)))
+    cat(sprintf("    RT_str:  emp=%d sim=%.0f err=%.0f\n", d6_info$rt_st_emp, d6_info$rt_st, abs(d6_info$rt_st - d6_info$rt_st_emp)))
+    cat(sprintf("    Gap:     emp=%d sim=%.0f\n", d6_info$rt_st_emp - d6_info$rt_s_emp, d6_info$rt_st - d6_info$rt_s))
+    cat(sprintf("    d_RT:    emp=%.3f sim=%.3f err=%.3f\n", d6_info$d_rt_emp, d6_info$d_rt, abs(d6_info$d_rt - d6_info$d_rt_emp)))
+    cat(sprintf("    ACC_self: emp=%.3f sim=%.3f err=%.3f\n", 0.966, d6_info$acc_s, abs(0.966 - d6_info$acc_s)))
+  }
+  invisible(NULL)
+}
+```
+
+## 3. 漂移率计算函数
+
+```{r v-computation, echo=TRUE}
+# v = v_T * v_P * 3 * (1 + ALPHA)
+
+v_T <- 1 / (1 + exp(-0.01 * (T - 100)))
+# 当T=30时，v_T ≈ 0.5
+# 当T=500时，v_T → 1 (饱和)
+
+# v_0 = v_T * v_P * 3  # 基线漂移率
+
+# - self: v_0 * 2.5 (ALPHA1 = 1.5 → 1 + 1.5 = 2.5)
+# - stranger: v_0 * 0.6 (ALPHA2 = -0.4 → 1 - 0.4 = 0.6)
+```
+
+## 4. 测试结果
+
+### 基线：无v_max
+
+```{r baseline, echo=TRUE}
+# 基线模型：无任何限制
+comp_v_base <- function(T, P, ck) {
+  v_T <- 1 / (1 + exp(-0.01 * (T - 100)))
+  v_P <- v_P_func(P, P1=4, k_min=0.1, k_max=0.05, gamma=GAMMA, P0=32)
+  v_0 <- v_T * v_P * 3
+  if (ck == 1) v_0 * 2.5 else v_0 * 0.6
+}
+run_test("BASELINE (no v_max)", comp_v_base)
+```
+
+### 改进1：添加v_max = 2.5
+
+```{r vmax25, echo=TRUE}
+# 问题：D6条件下v过高，导致d_RT过大
+# 解决：添加v_max限制
+
+comp_v_vm25 <- function(T, P, ck) {
+  v_T <- 1 / (1 + exp(-0.01 * (T - 100)))
+  v_P <- v_P_func(P, P1=4, k_min=0.1, k_max=0.05, gamma=GAMMA, P0=32)
+  v_0 <- v_T * v_P * 3
+  v <- if (ck == 1) v_0 * 2.5 else v_0 * 0.6
+  min(v, 2.5)  # 限制最大漂移率
+}
+run_test("v_max=2.5", comp_v_vm25)
+```
+
+### 改进2：v_max + 噪声调整
+
+```{r fix1-noise, echo=TRUE}
+# 改进2：增加过程噪声,使RT分布更接近实证
+cat("\n\n--- Fix 1: Increase noise_scale ---\n")
+run_test("Fix1: noise=1.5 + v_max=2.5", comp_v_vm25, noise_scale=1.5)
+run_test("Fix1: noise=2.0 + v_max=2.5", comp_v_vm25, noise_scale=2.0)
+```
+
+### 改进3：v_max + 边界调整
+
+```{r fix2-beta, echo=TRUE}
+# 改进3：增加边界参数BETA1,调整边界a，匹配实证中被试的谨慎程度
+cat("\n\n--- Fix 2: Increase BETA1 ---\n")
+run_test("Fix2: BETA1=0.3 + v_max=2.5", comp_v_vm25, beta1=0.3)
+run_test("Fix2: BETA1=0.4 + v_max=2.5", comp_v_vm25, beta1=0.4)
+```
+
+### 改进4：v_max + 非决策时间调整
+
+```{r fix3-t0, echo=TRUE}
+# 改进4：增加非决策时间t0,调整RT基准水平
+cat("\n\n--- Fix 3: Increase t0 ---\n")
+run_test("Fix3: t0=0.25 + v_max=2.5", comp_v_vm25, t0=0.25)
+run_test("Fix3: t0=0.30 + v_max=2.5", comp_v_vm25, t0=0.30)
+```
+
+### 改进5：综合方案（BETA1 + noise_scale）
+
+```{r fix4-combined, echo=TRUE}
+# 改进5：综合调整
+# BETA1=0.3 (边界) + noise_scale=1.2 (噪声)
+cat("\n\n--- Fix 4: Combined ---\n")
+run_test("Fix4: BETA1=0.3 + noise=1.5 + v_max=2.5", comp_v_vm25, beta1=0.3, noise_scale=1.5)
+run_test("Fix4: BETA1=0.3 + noise=1.2 + v_max=2.5", comp_v_vm25, beta1=0.3, noise_scale=1.2)
+```
+
+### 改进6：v_max=3.0 + 噪声
+
+```{r fix5-vmax3, echo=TRUE}
+# 改进6：放宽v_max限制
+# v_max=3.0 vs v_max=2.5
+comp_v_vm3 <- function(T, P, ck) {
+  v_T <- 1 / (1 + exp(-0.01 * (T - 100)))
+  v_P <- v_P_func(P, P1=4, k_min=0.1, k_max=0.05, gamma=GAMMA, P0=32)
+  v_0 <- v_T * v_P * 3
+  v <- if (ck == 1) v_0 * 2.5 else v_0 * 0.6
+  min(v, 3.0)
+}
+cat("\n\n--- Fix 5: v_max=3.0 + noise ---\n")
+run_test("Fix5: v_max=3.0 + noise=1.5", comp_v_vm3, noise_scale=1.5)
+run_test("Fix5: v_max=3.0 + noise=1.2", comp_v_vm3, noise_scale=1.2)
+```
+
+
+## 5. 分析总结
+
+### 5.1 测试结果对比
+
+| 方案 | MAE d_RT | 改善幅度 |
+|------|-----------|----------|
+| BASELINE (no v_max) | 0.352 | — |
+| v_max=2.5 | 0.127 | -64% |
+| v_max=3.0 + noise=1.2 | 0.138 | -61% |
+| **BETA1=0.3 + noise=1.2 + v_max=2.5** | **0.091** | **-74%** |
+
+### 5.2 当前主要差异
+
+最优方案（BETA1=0.3 + noise=1.2 + v_max=2.5）下各条件的误差：
+
+| 设计 | 实证 d_RT | 模型 d_RT | 误差 | 状态 |
+|------|-----------|----------|------|------|
+| D1 | 0.005 | 0.069 | 0.064 | ✅ |
+| D2 | -0.014 | -0.027 | 0.013 | ✅ |
+| **D3a** | **-0.044** | **0.237** | **0.281** | ❌ 最大 |
+| D4a | 0.046 | 0.127 | 0.081 | ⚠️ |
+| D5 | 0.349 | 0.275 | 0.074 | ✅ |
+| D6 | 0.305 | 0.425 | 0.120 | ⚠️ |
+| D3b | 0.205 | 0.230 | 0.025 | ✅ |
+| D4b | 0.232 | 0.299 | 0.067 | ⚠️ |
